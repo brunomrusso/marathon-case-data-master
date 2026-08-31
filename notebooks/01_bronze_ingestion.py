@@ -83,6 +83,14 @@ df = (df
       .withColumn("file_name", lit(file_path))
       .withColumn("row_hash", sha2(concat_ws("||", *cols), 256)))
 
+# Remove duplicatas no source antes do merge
+total_raw = df.count()
+df = df.dropDuplicates(["row_hash"])
+total_dedup = df.count()
+
+if total_raw != total_dedup:
+    print(f"Removidas {total_raw - total_dedup} linhas duplicadas de {source} (year={year}): {total_raw} -> {total_dedup}")
+
 # COMMAND ----------
 
 from delta.tables import DeltaTable
@@ -108,7 +116,7 @@ else:
 # COMMAND ----------
 
 ingestion_date = datetime.now()
-file_metadata = [(source, year, file_path, df.count(), ingestion_date)]
+file_metadata = [(source, year, file_path, total_dedup, ingestion_date)]
 file_meta_df = spark.createDataFrame(file_metadata, ["source", "year", "file_name", "rows", "ingestion_date"])
 
 if not spark.catalog.tableExists("bronze.file_metadata"):
@@ -118,4 +126,4 @@ else:
 
 # COMMAND ----------
 
-print(f"Ingestao concluida: {source} {year} — {df.count()} registros.")
+print(f"Ingestao concluida: {source} {year} — {total_dedup} registros.")
