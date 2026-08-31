@@ -22,6 +22,7 @@ sys.path.insert(0, "../src")
 
 spark = SparkSession.builder.appName("SilverETL").getOrCreate()
 
+spark.sql("USE CATALOG main")
 spark.sql("CREATE SCHEMA IF NOT EXISTS silver")
 
 # COMMAND ----------

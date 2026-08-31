@@ -42,18 +42,8 @@ storage = config["azure"]["storage_account"]
 container = config["azure"]["container"]
 bronze_path = f"abfss://{container}@{storage}.dfs.core.windows.net/bronze/{source}"
 
+spark.sql("USE CATALOG main")
 spark.sql("CREATE SCHEMA IF NOT EXISTS bronze")
-
-# COMMAND ----------
-
-# Configura a chave do ADLS a partir de Databricks Secret Scope
-try:
-    storage_key = dbutils.secrets.get("marathon-scope", "adls-access-key")
-    spark.conf.set(f"fs.azure.account.key.{storage}.dfs.core.windows.net", storage_key)
-    print("Credenciais ADLS configuradas.")
-except Exception as e:
-    print("Aviso: nao foi possivel ler o segredo 'marathon-scope/adls-access-key'.")
-    print("A gravacao no ADLS falhara se as credenciais nao estiverem configuradas.")
 
 # COMMAND ----------
 

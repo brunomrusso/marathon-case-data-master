@@ -65,6 +65,7 @@ $rg = $deployment.properties.outputs.resourceGroupName.value
 $storage = $deployment.properties.outputs.storageAccountName.value
 $wsUrl = $deployment.properties.outputs.databricksWorkspaceUrl.value
 $kv = $deployment.properties.outputs.keyVaultName.value
+$accessConnectorId = $deployment.properties.outputs.accessConnectorId.value
 
 # Obter storage key
 $storageKey = (az storage account keys list `
@@ -81,6 +82,7 @@ Write-Host "Storage Account: $storage"
 Write-Host "Container: marathon-data"
 Write-Host "Databricks Workspace URL: $wsUrl"
 Write-Host "Key Vault: $kv"
+Write-Host "Access Connector ID: $accessConnectorId"
 Write-Host ""
 Write-Host "Storage Access Key (guarde em local seguro):"
 Write-Host $storageKey
@@ -92,6 +94,8 @@ Write-Host "3. Defina as variaveis de ambiente:"
 Write-Host "   `$env:DATABRICKS_HOST = `"$wsUrl`""
 Write-Host "   `$env:DATABRICKS_TOKEN = `"seu-token`""
 Write-Host "   `$env:STORAGE_ACCESS_KEY = `"$storageKey`""
-Write-Host "4. Salve o segredo: python scripts/setup_databricks_secrets.py"
-Write-Host "5. Suba os CSVs: python scripts/upload_raw_data.py"
-Write-Host "6. Crie o workflow: python scripts/create_databricks_workflow.py"
+Write-Host "   `$env:ACCESS_CONNECTOR_ID = `"$accessConnectorId`""
+Write-Host "4. Salve os segredos: python scripts/setup_databricks_secrets.py"
+Write-Host "5. Configure o Unity Catalog: python scripts/setup_unity_catalog.py"
+Write-Host "6. Suba os CSVs: python scripts/upload_raw_data.py"
+Write-Host "7. Crie o workflow: python scripts/create_databricks_workflow.py"

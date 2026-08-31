@@ -9,7 +9,9 @@ var storageAccountName = 'st${projectName}${environment}'
 var containerName = 'marathon-data'
 var databricksName = 'dbw-${projectName}-${environment}'
 var keyVaultName = 'kv-${projectName}-${environment}'
+var accessConnectorName = 'ac-${projectName}-${environment}-v2'
 var databricksManagedRg = 'databricks-rg-${projectName}-${environment}'
+var storageBlobDataContributor = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
 
 resource storage 'Microsoft.Storage/storageAccounts@2022-09-01' = {
   name: storageAccountName
@@ -50,7 +52,28 @@ resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' = {
   tags: tags
 }
 
+resource accessConnector 'Microsoft.Databricks/accessConnectors@2022-10-01-preview' = {
+  name: accessConnectorName
+  location: location
+  identity: {
+    type: 'SystemAssigned'
+  }
+  properties: {}
+  tags: tags
+}
+
+resource storageRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(accessConnector.id, storage.id, storageBlobDataContributor)
+  scope: storage
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageBlobDataContributor)
+    principalId: accessConnector.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
 output storageAccountName string = storage.name
 output databricksWorkspaceName string = databricks.name
 output databricksWorkspaceUrl string = databricks.properties.workspaceUrl
 output keyVaultName string = keyVault.name
+output accessConnectorId string = accessConnector.id

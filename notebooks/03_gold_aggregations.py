@@ -16,6 +16,7 @@ from pyspark.sql.functions import (
 
 spark = SparkSession.builder.appName("GoldAggregations").getOrCreate()
 
+spark.sql("USE CATALOG main")
 spark.sql("CREATE SCHEMA IF NOT EXISTS gold")
 
 silver = spark.table("silver.marathons")
