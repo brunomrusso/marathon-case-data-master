@@ -100,6 +100,7 @@ from delta.tables import DeltaTable
 bronze_table = f"bronze.{source}"
 
 if not spark.catalog.tableExists(bronze_table):
+    dbutils.fs.rm(bronze_path, recurse=True, ignore_errors=True)
     (df.write
      .format("delta")
      .mode("overwrite")
