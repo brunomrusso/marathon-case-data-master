@@ -73,7 +73,39 @@ def main():
     else:
         raise Exception(f"Erro ao criar external location: {resp.status_code} - {resp.text}")
 
-    print("Unity Catalog configurado. Os notebooks podem usar o catalog 'main'.")
+    # Criar catalog dedicado do projeto
+    catalog_name = "marathon"
+    storage_root = f"{external_url}catalogs/{catalog_name}/"
+    resp = requests.post(
+        f"{host}/api/2.1/unity-catalog/catalogs",
+        headers=headers,
+        json={
+            "name": catalog_name,
+            "storage_root": storage_root,
+            "comment": "Catalog do case marathon"
+        }
+    )
+    if resp.status_code == 200:
+        print(f"Catalog '{catalog_name}' criado.")
+    elif resp.status_code == 409 or "already exists" in resp.text.lower():
+        print(f"Catalog '{catalog_name}' ja existia.")
+    else:
+        raise Exception(f"Erro ao criar catalog: {resp.status_code} - {resp.text}")
+
+    # Salvar nome do catalog como segredo para os notebooks
+    resp = requests.post(
+        f"{host}/api/2.0/secrets/put",
+        headers=headers,
+        json={
+            "scope": "marathon-scope",
+            "key": "catalog_name",
+            "string_value": catalog_name
+        }
+    )
+    resp.raise_for_status()
+    print("Segredo 'catalog_name' salvo no scope 'marathon-scope'.")
+
+    print("Unity Catalog configurado. Os notebooks usam o catalog 'marathon'.")
 
 
 if __name__ == "__main__":

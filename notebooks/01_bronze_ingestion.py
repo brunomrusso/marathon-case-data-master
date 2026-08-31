@@ -42,7 +42,8 @@ storage = config["azure"]["storage_account"]
 container = config["azure"]["container"]
 bronze_path = f"abfss://{container}@{storage}.dfs.core.windows.net/bronze/{source}"
 
-spark.sql("USE CATALOG main")
+catalog_name = dbutils.secrets.get("marathon-scope", "catalog_name")
+spark.sql(f"USE CATALOG {catalog_name}")
 spark.sql("CREATE SCHEMA IF NOT EXISTS bronze")
 
 # COMMAND ----------

@@ -16,7 +16,8 @@ from pyspark.sql.functions import (
 
 spark = SparkSession.builder.appName("GoldAggregations").getOrCreate()
 
-spark.sql("USE CATALOG main")
+catalog_name = dbutils.secrets.get("marathon-scope", "catalog_name")
+spark.sql(f"USE CATALOG {catalog_name}")
 spark.sql("CREATE SCHEMA IF NOT EXISTS gold")
 
 silver = spark.table("silver.marathons")
