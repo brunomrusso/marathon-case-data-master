@@ -1,0 +1,27 @@
+# Ambientes virtuais
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# Dados (não versionar arquivos brutos)
+data/raw/*
+data/bronze/*
+data/silver/*
+data/gold/*
+!data/**/.gitkeep
+
+# Credenciais e configurações locais
+.env
+*.key
+*.pem
+.azure/
+.databricks/
+
+# Outputs do Databricks
+*.dbfs
+*.parquet
+
+# IDEs
+.vscode/
+.idea/

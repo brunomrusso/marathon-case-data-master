@@ -1,0 +1,38 @@
+project:
+  name: "marathon-case-data-master"
+  version: "1.0.0"
+
+azure:
+  resource_group: "rg-marathon-case"
+  storage_account: "stmarathoncase"
+  container: "marathon-data"
+  databricks_workspace: "dbw-marathon-case"
+  key_vault: "kv-marathon-case"
+
+paths:
+  raw: "abfss://marathon-data@stmarathoncase.dfs.core.windows.net/raw"
+  bronze: "abfss://marathon-data@stmarathoncase.dfs.core.windows.net/bronze"
+  silver: "abfss://marathon-data@stmarathoncase.dfs.core.windows.net/silver"
+  gold: "abfss://marathon-data@stmarathoncase.dfs.core.windows.net/gold"
+
+sources:
+  chicago:
+    name: "chicago"
+    delimiter: ";"
+    years: "2000-2025"
+    filename_pattern: "chicago_marathon_2000_2025.csv"
+  london:
+    name: "london"
+    delimiter: ","
+    years: "2014-2023"
+    filename_pattern: "london_{year}_mass_results.csv"
+  nyc:
+    name: "nyc"
+    delimiter: ","
+    years: ""
+    filename_pattern: "nyc_marathon_all_years.csv"
+  berlin:
+    name: "berlin"
+    delimiter: ";"
+    years: "1999-2025"
+    filename_pattern: "berlin_marathon_all_years.csv"

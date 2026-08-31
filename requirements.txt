@@ -1,0 +1,8 @@
+pyspark>=3.5.0
+pyyaml>=6.0
+requests>=2.31.0
+python-dotenv>=1.0.0
+pandas>=2.0.0
+azure-identity>=1.15.0
+azure-storage-blob>=12.19.0
+azure-mgmt-resource>=23.0.0
