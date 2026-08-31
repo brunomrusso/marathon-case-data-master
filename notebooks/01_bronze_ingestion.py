@@ -6,6 +6,10 @@
 
 # COMMAND ----------
 
+# MAGIC %pip install pyyaml
+
+# COMMAND ----------
+
 import sys
 import yaml
 from datetime import datetime
