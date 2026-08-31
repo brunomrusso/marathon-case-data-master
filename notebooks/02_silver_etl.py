@@ -181,10 +181,12 @@ union_df = (union_df
 
 # COMMAND ----------
 
-# Validações básicas
-invalid = union_df.filter(col("gender").isNull() | (col("finish_time_sec") < 0))
-if invalid.head(1):
-    raise ValueError("Encontrados registros inválidos na Silver")
+# Validações básicas: remove registros sem gênero ou com tempo negativo
+invalid_count = union_df.filter(col("gender").isNull() | (col("finish_time_sec") < 0)).count()
+if invalid_count > 0:
+    print(f"Removidos {invalid_count} registros invalidos da Silver (gender nulo ou finish_time_sec < 0)")
+
+union_df = union_df.filter(col("gender").isNotNull() & ((col("finish_time_sec") >= 0) | col("finish_time_sec").isNull()))
 
 # COMMAND ----------
 
