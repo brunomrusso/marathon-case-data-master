@@ -192,7 +192,6 @@ if invalid.head(1):
  .format("delta")
  .mode("overwrite")
  .partitionBy("source", "year")
- .option("mergeSchema", "true")
  .saveAsTable("silver.marathons"))
 
 print(f"Silver processada: {union_df.count()} registros.")

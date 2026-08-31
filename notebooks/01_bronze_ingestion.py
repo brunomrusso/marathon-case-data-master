@@ -104,7 +104,6 @@ if not spark.catalog.tableExists(bronze_table):
      .format("delta")
      .mode("overwrite")
      .partitionBy("year")
-     .option("mergeSchema", "true")
      .option("path", bronze_path)
      .saveAsTable(bronze_table))
 else:
