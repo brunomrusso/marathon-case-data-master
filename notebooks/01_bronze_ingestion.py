@@ -135,8 +135,9 @@ file_meta_df = (df.groupBy("year", "file_name")
                  .count()
                  .withColumn("source", lit(source))
                  .withColumn("ingestion_date", current_timestamp())
-                 .select("source", "year", "file_name", "count", "ingestion_date")
-                 .withColumnRenamed("count", "rows"))
+                 .withColumn("year", col("year").cast("int"))
+                 .withColumn("rows", col("count").cast("long"))
+                 .select("source", "year", "file_name", "rows", "ingestion_date"))
 
 if not spark.catalog.tableExists("bronze.file_metadata"):
     file_meta_df.write.format("delta").mode("overwrite").saveAsTable("bronze.file_metadata")
