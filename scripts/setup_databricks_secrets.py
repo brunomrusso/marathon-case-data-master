@@ -1,6 +1,7 @@
 import os
 import getpass
 import requests
+from pathlib import Path
 
 
 def get_env_or_prompt(name, secret=False):
@@ -33,14 +34,28 @@ def main():
     else:
         print(f"Aviso ao criar scope: {resp.status_code} - {resp.text}")
 
-    # Salvar segredo
+    # Salvar chave do ADLS
     resp = requests.post(f"{host}/api/2.0/secrets/put", headers=headers, json={
         "scope": "marathon-scope",
         "key": "adls-access-key",
         "string_value": storage_key
     })
     resp.raise_for_status()
-    print("Segredo 'adls-access-key' salvo no scope 'marathon-scope'.")
+    print("Segredo 'adls-access-key' salvo.")
+
+    # Salvar config.yaml para os notebooks poderem ler no Databricks
+    config_path = Path(__file__).parent.parent / "config" / "config.yaml"
+    if config_path.exists():
+        config_yaml = config_path.read_text(encoding="utf-8")
+        resp = requests.post(f"{host}/api/2.0/secrets/put", headers=headers, json={
+            "scope": "marathon-scope",
+            "key": "config_yaml",
+            "string_value": config_yaml
+        })
+        resp.raise_for_status()
+        print("Segredo 'config_yaml' salvo.")
+    else:
+        print(f"Aviso: {config_path} nao encontrado. Os notebooks precisam dele.")
 
 
 if __name__ == "__main__":

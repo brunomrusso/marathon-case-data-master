@@ -31,8 +31,8 @@ delimiter = dbutils.widgets.get("delimiter")
 
 # COMMAND ----------
 
-with open("../config/config.yaml", "r", encoding="utf-8") as f:
-    config = yaml.safe_load(f)
+config_yaml = dbutils.secrets.get("marathon-scope", "config_yaml")
+config = yaml.safe_load(config_yaml)
 
 storage = config["azure"]["storage_account"]
 container = config["azure"]["container"]
