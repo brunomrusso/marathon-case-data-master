@@ -22,6 +22,8 @@ sys.path.insert(0, "../src")
 
 spark = SparkSession.builder.appName("SilverETL").getOrCreate()
 
+spark.sql("CREATE SCHEMA IF NOT EXISTS silver")
+
 # COMMAND ----------
 
 def safe_get(df, source_name, alias_name):

@@ -15,6 +15,9 @@ from pyspark.sql.functions import (
 # COMMAND ----------
 
 spark = SparkSession.builder.appName("GoldAggregations").getOrCreate()
+
+spark.sql("CREATE SCHEMA IF NOT EXISTS gold")
+
 silver = spark.table("silver.marathons")
 
 # COMMAND ----------
