@@ -70,9 +70,7 @@ def sanitize(name):
     name = re.sub(r"[ ,;{}()\n\t=]", "_", name)
     name = re.sub(r"_+", "_", name)
     name = name.strip("_")
-    if name and not name[0].isdigit():
-        return name
-    return f"_{name}"
+    return name if name else "_col"
 
 new_cols = [sanitize(c) for c in df.columns]
 df = df.toDF(*new_cols)
