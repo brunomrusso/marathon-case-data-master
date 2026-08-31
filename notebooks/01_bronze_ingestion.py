@@ -47,6 +47,8 @@ catalog_name = dbutils.secrets.get("marathon-scope", "catalog_name")
 spark.sql(f"USE CATALOG {catalog_name}")
 spark.sql("CREATE SCHEMA IF NOT EXISTS bronze")
 
+spark.conf.set("spark.sql.ansi.enabled", "false")
+
 # COMMAND ----------
 
 df = (spark.read
