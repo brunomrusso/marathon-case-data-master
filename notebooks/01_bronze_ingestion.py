@@ -53,7 +53,7 @@ spark.conf.set("spark.sql.ansi.enabled", "false")
 
 df = (spark.read
       .option("header", "true")
-      .option("inferSchema", "true")
+      .option("inferSchema", "false")
       .option("delimiter", delimiter)
       .csv(file_path))
 
