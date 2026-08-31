@@ -14,7 +14,9 @@ import re
 import sys
 import yaml
 from datetime import datetime
-from pyspark.sql.functions import col, lit, current_timestamp, sha2, concat_ws
+from pyspark.sql.functions import (
+    col, lit, current_timestamp, sha2, concat_ws, input_file_name, regexp_extract
+)
 
 # COMMAND ----------
 
@@ -57,10 +59,13 @@ df = (spark.read
       .option("delimiter", delimiter)
       .csv(file_path))
 
-# Preserva o ano do CSV quando existe (Year/year), senao usa o do widget
+# Preserva o ano do CSV quando existe (Year/year), senao extrai do nome do arquivo ou do widget
 year_col = next((c for c in df.columns if c.lower() == "year"), None)
 if year_col is None:
-    df = df.withColumn("year", lit(year).cast("int"))
+    if "*" in file_path:
+        df = df.withColumn("year", regexp_extract(input_file_name(), r"_(\d{4})", 1).cast("int"))
+    else:
+        df = df.withColumn("year", lit(year).cast("int"))
 else:
     if year_col != "year":
         df = df.withColumnRenamed(year_col, "year")
@@ -79,11 +84,17 @@ df = df.toDF(*new_cols)
 
 cols = [c for c in df.columns]
 
+# Identifica o nome do arquivo por linha
+if "*" in file_path:
+    file_name_col = input_file_name()
+else:
+    file_name_col = lit(file_path)
+
 df = (df
       .withColumn("source", lit(source))
       .withColumn("ingestion_date", current_timestamp())
-      .withColumn("file_name", lit(file_path))
-      .withColumn("row_hash", sha2(concat_ws("||", *cols), 256)))
+      .withColumn("row_hash", sha2(concat_ws("||", *cols), 256))
+      .withColumn("file_name", file_name_col))
 
 # Remove duplicatas no source antes do merge
 total_raw = df.count()
@@ -91,7 +102,7 @@ df = df.dropDuplicates(["row_hash"])
 total_dedup = df.count()
 
 if total_raw != total_dedup:
-    print(f"Removidas {total_raw - total_dedup} linhas duplicadas de {source} (year={year}): {total_raw} -> {total_dedup}")
+    print(f"Removidas {total_raw - total_dedup} linhas duplicadas de {source}: {total_raw} -> {total_dedup}")
 
 # COMMAND ----------
 
@@ -120,9 +131,12 @@ else:
 
 # COMMAND ----------
 
-ingestion_date = datetime.now()
-file_metadata = [(source, year, file_path, total_dedup, ingestion_date)]
-file_meta_df = spark.createDataFrame(file_metadata, ["source", "year", "file_name", "rows", "ingestion_date"])
+file_meta_df = (df.groupBy("year", "file_name")
+                 .count()
+                 .withColumn("source", lit(source))
+                 .withColumn("ingestion_date", current_timestamp())
+                 .select("source", "year", "file_name", "count", "ingestion_date")
+                 .withColumnRenamed("count", "rows"))
 
 if not spark.catalog.tableExists("bronze.file_metadata"):
     file_meta_df.write.format("delta").mode("overwrite").saveAsTable("bronze.file_metadata")
@@ -131,4 +145,4 @@ else:
 
 # COMMAND ----------
 
-print(f"Ingestao concluida: {source} {year} — {total_dedup} registros.")
+print(f"Ingestao concluida: {source} — {total_dedup} registros.")

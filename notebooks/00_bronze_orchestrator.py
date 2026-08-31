@@ -2,7 +2,8 @@
 
 # MAGIC %md
 # MAGIC # Bronze — Orquestrador
-# MAGIC Varre a pasta raw do DBFS e executa a ingestão Bronze para cada CSV encontrado.
+# MAGIC Varre a pasta raw do DBFS e executa a ingestão Bronze uma vez por fonte.
+# MAGIC Para fontes multi-arquivo (London), usa glob para ler todos de uma vez.
 
 # COMMAND ----------
 
@@ -18,35 +19,43 @@ files = [f for f in dbutils.fs.ls(raw_dir) if f.path.endswith(".csv")]
 def classify(file_name):
     lower = file_name.lower()
     if "chicago" in lower:
-        return ("chicago", 0, ";")
+        return "chicago", ";"
     if lower.startswith("london_"):
-        m = re.search(r"london_(\d{4})_", lower)
-        year = int(m.group(1)) if m else 0
-        return ("london", year, ",")
+        return "london", ","
     if "nyc" in lower or "new_york" in lower:
-        return ("nyc", 0, ",")
+        return "nyc", ","
     if "berlin" in lower:
-        return ("berlin", 0, ";")
+        return "berlin", ";"
     raise ValueError(f"Fonte desconhecida para o arquivo: {file_name}")
 
 # COMMAND ----------
 
-for file_info in files:
-    file_name = file_info.name
-    file_path = file_info.path
-    source, year, delimiter = classify(file_name)
-    print(f"Ingerindo: {file_name} -> source={source}, year={year}, delimiter={delimiter}")
+# Agrupa arquivos por fonte
+sources = {}
+for f in files:
+    source, delimiter = classify(f.name)
+    sources.setdefault(source, {"delimiter": delimiter, "paths": []})
+    sources[source]["paths"].append(f.path)
+
+# Chama o 01 uma vez por fonte. Para London, passa um glob.
+for source, info in sources.items():
+    if source == "london":
+        file_path = f"{raw_dir}/London_*.csv"
+    else:
+        file_path = info["paths"][0]
+
+    print(f"Ingerindo: {source} -> {file_path} (delimiter={info['delimiter']})")
     dbutils.notebook.run(
         "01_bronze_ingestion",
         3600,
         {
             "source": source,
-            "year": str(year),
+            "year": "0",
             "file_path": file_path,
-            "delimiter": delimiter,
+            "delimiter": info["delimiter"],
         },
     )
 
 # COMMAND ----------
 
-print(f"Orquestrador concluído. {len(files)} arquivos processados.")
+print(f"Orquestrador concluído. {len(sources)} fontes processadas.")
