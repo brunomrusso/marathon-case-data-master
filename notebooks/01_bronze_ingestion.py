@@ -10,6 +10,7 @@
 
 # COMMAND ----------
 
+import re
 import sys
 import yaml
 from datetime import datetime
@@ -62,6 +63,19 @@ else:
     if year_col != "year":
         df = df.withColumnRenamed(year_col, "year")
     df = df.withColumn("year", col("year").cast("int"))
+
+# Sanitiza nomes de colunas para evitar caracteres invalidos no Delta
+
+def sanitize(name):
+    name = re.sub(r"[ ,;{}()\n\t=]", "_", name)
+    name = re.sub(r"_+", "_", name)
+    name = name.strip("_")
+    if name and not name[0].isdigit():
+        return name
+    return f"_{name}"
+
+new_cols = [sanitize(c) for c in df.columns]
+df = df.toDF(*new_cols)
 
 cols = [c for c in df.columns]
 
