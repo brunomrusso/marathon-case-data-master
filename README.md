@@ -144,7 +144,13 @@ O script atribui:
 - `Storage Account Contributor`
 - `EventGrid EventSubscription Contributor`
 
-Pode levar alguns minutos para as roles propagarem no Azure.
+Pode levar alguns minutos para as roles propagarem no Azure. Para verificar, obtenha o `principalId` exibido pelo script e liste:
+
+```powershell
+az role assignment list --assignee-object-id <PRINCIPAL_ID> --all --output table
+```
+
+Você deve ver as 4 roles atribuídas.
 
 ### 8. Salvar o segredo do config.yaml no Databricks
 
