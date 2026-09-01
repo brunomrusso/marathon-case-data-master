@@ -6,7 +6,12 @@
 
 # COMMAND ----------
 
+# MAGIC %pip install pyyaml
+
+# COMMAND ----------
+
 import sys
+import yaml
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import (
     col, lit, when, upper, trim, regexp_extract, coalesce, sha2, concat_ws,
@@ -27,6 +32,12 @@ spark.conf.set("spark.sql.ansi.enabled", "false")
 catalog_name = dbutils.secrets.get("marathon-scope", "catalog_name")
 spark.sql(f"USE CATALOG {catalog_name}")
 spark.sql("CREATE SCHEMA IF NOT EXISTS silver")
+
+config_yaml = dbutils.secrets.get("marathon-scope", "config_yaml")
+config = yaml.safe_load(config_yaml)
+storage = config["azure"]["storage_account"]
+container = config["azure"]["container"]
+silver_path = f"abfss://{container}@{storage}.dfs.core.windows.net/silver/marathons"
 
 # COMMAND ----------
 
@@ -190,10 +201,16 @@ union_df = union_df.filter(col("gender").isNotNull() & ((col("finish_time_sec") 
 
 # COMMAND ----------
 
+try:
+    dbutils.fs.rm(silver_path, recurse=True)
+except Exception:
+    pass
+
 (union_df.write
  .format("delta")
  .mode("overwrite")
  .partitionBy("source", "year")
+ .option("path", silver_path)
  .saveAsTable("silver.marathons"))
 
 print(f"Silver processada: {union_df.count()} registros.")

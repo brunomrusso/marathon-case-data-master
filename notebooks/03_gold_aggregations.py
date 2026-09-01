@@ -6,7 +6,12 @@
 
 # COMMAND ----------
 
+# MAGIC %pip install pyyaml
+
+# COMMAND ----------
+
 import sys
+import yaml
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import (
     col, count, avg, min, max, sum, round, when, expr
@@ -21,6 +26,25 @@ spark.conf.set("spark.sql.ansi.enabled", "false")
 catalog_name = dbutils.secrets.get("marathon-scope", "catalog_name")
 spark.sql(f"USE CATALOG {catalog_name}")
 spark.sql("CREATE SCHEMA IF NOT EXISTS gold")
+
+config_yaml = dbutils.secrets.get("marathon-scope", "config_yaml")
+config = yaml.safe_load(config_yaml)
+storage = config["azure"]["storage_account"]
+container = config["azure"]["container"]
+
+def save_gold(df, table, partition_cols=None):
+    gold_path = f"abfss://{container}@{storage}.dfs.core.windows.net/gold/{table}"
+    try:
+        dbutils.fs.rm(gold_path, recurse=True)
+    except Exception:
+        pass
+    writer = (df.write
+              .format("delta")
+              .mode("overwrite")
+              .option("path", gold_path))
+    if partition_cols:
+        writer = writer.partitionBy(*partition_cols)
+    writer.saveAsTable(f"gold.{table}")
 
 silver = spark.table("silver.marathons")
 
@@ -38,11 +62,7 @@ kpi_summary = (silver
     )
     .withColumn("female_pct", round(col("female_count") / col("total_athletes") * 100, 2)))
 
-(kpi_summary.write
- .format("delta")
- .mode("overwrite")
- .partitionBy("source", "year")
- .saveAsTable("gold.kpi_summary"))
+save_gold(kpi_summary, "kpi_summary", ["source", "year"])
 
 # COMMAND ----------
 
@@ -56,10 +76,7 @@ finishers_by_year = (silver
     )
     .withColumn("female_pct", round(col("female_finishers") / col("total_finishers") * 100, 2)))
 
-(finishers_by_year.write
- .format("delta")
- .mode("overwrite")
- .saveAsTable("gold.finishers_by_year"))
+save_gold(finishers_by_year, "finishers_by_year", ["source", "year"])
 
 # COMMAND ----------
 
@@ -72,11 +89,7 @@ top_countries = (silver
         avg("finish_time_sec").alias("avg_finish_time_sec")
     ))
 
-(top_countries.write
- .format("delta")
- .mode("overwrite")
- .partitionBy("source", "year")
- .saveAsTable("gold.top_countries"))
+save_gold(top_countries, "top_countries", ["source", "year"])
 
 # COMMAND ----------
 
@@ -89,10 +102,7 @@ athletes_by_country = (silver
         avg("finish_time_sec").alias("avg_finish_time_sec")
     ))
 
-(athletes_by_country.write
- .format("delta")
- .mode("overwrite")
- .saveAsTable("gold.athletes_by_country"))
+save_gold(athletes_by_country, "athletes_by_country")
 
 # COMMAND ----------
 
@@ -109,11 +119,7 @@ times_distribution = (silver
         expr("percentile_approx(finish_time_sec, 0.75)").alias("q3")
     ))
 
-(times_distribution.write
- .format("delta")
- .mode("overwrite")
- .partitionBy("source", "year")
- .saveAsTable("gold.times_distribution"))
+save_gold(times_distribution, "times_distribution", ["source", "year"])
 
 # COMMAND ----------
 
@@ -127,11 +133,7 @@ marathon_comparison = (silver
         avg("finish_time_sec").alias("avg_time")
     ))
 
-(marathon_comparison.write
- .format("delta")
- .mode("overwrite")
- .partitionBy("year")
- .saveAsTable("gold.marathon_comparison"))
+save_gold(marathon_comparison, "marathon_comparison", ["year"])
 
 # COMMAND ----------
 
@@ -143,11 +145,7 @@ age_gender_profile = (silver
         avg("finish_time_sec").alias("avg_finish_time_sec")
     ))
 
-(age_gender_profile.write
- .format("delta")
- .mode("overwrite")
- .partitionBy("source", "year")
- .saveAsTable("gold.age_gender_profile"))
+save_gold(age_gender_profile, "age_gender_profile", ["source", "year"])
 
 # COMMAND ----------
 
