@@ -2,7 +2,7 @@
 
 ## I. Objetivo do Case
 
-Desenvolver uma solução completa de Engenharia de Dados para ingerir, processar, armazenar e visualizar dados de resultados de maratonas. A solução demonstra extração, ingestão batch, arquitetura medalhão (Bronze/Silver/Gold), observabilidade, segurança, mascaramento de dados sensíveis, escalabilidade e reprodutibilidade.
+Desenvolver uma solução completa de Engenharia de Dados para ingerir, processar, armazenar e visualizar dados de resultados de maratonas. A solução demonstra extração, ingestão batch, arquitetura medalhão (Bronze/Silver/Gold), observabilidade, segurança, mascaramento de dados sensíveis, escalabilidade, governança via Unity Catalog e reprodutibilidade.
 
 ## II. Arquitetura
 
@@ -11,18 +11,22 @@ Desenvolver uma solução completa de Engenharia de Dados para ingerir, processa
 - **Armazenamento:** Azure Data Lake Storage Gen2 com Delta Lake
 - **Processamento:** Azure Databricks + PySpark
 - **Orquestração:** Databricks Workflows
-- **Observabilidade:** Azure Monitor + Databricks Job Metrics
-- **Segurança:** Azure Key Vault, RBAC, criptografia e mascaramento
+- **Governança:** Unity Catalog, External Locations e Managed Identities
+- **Observabilidade:** Databricks Job Metrics + tabela `bronze.file_metadata`
+- **Segurança:** Azure Key Vault, RBAC, criptografia, mascaramento e Access Connector
 - **Dashboard:** Power BI ou Streamlit
 
 ### Arquitetura Medalhão
-- **Bronze:** ingestão dos CSVs brutos das quatro origens, com registro de arquivos processados e carga incremental via `MERGE`.
-- **Silver:** limpeza, padronização de schema, integração das fontes e mascaramento/anonimização.
-- **Gold:** agregações e métricas para alimentar o dashboard final.
+- **Bronze:** ingestão dos CSVs brutos das quatro origens, com registro de arquivos processados e carga incremental via `MERGE`. Tabelas **externas** no ADLS (`bronze/<source>`).
+- **Silver:** limpeza, padronização de schema, integração das fontes, mascaramento/anonimização e validação. Tabela **externa** no ADLS (`silver/marathons`).
+- **Gold:** agregações e métricas para alimentar o dashboard. Tabelas **externas** no ADLS (`gold/<tabela>`).
+
+Todas as camadas são catalogadas no **Unity Catalog** (`marathon.bronze.*`, `marathon.silver.*`, `marathon.gold.*`), mas com os arquivos Delta armazenados em locais controlados pelo ADLS.
 
 ### Fluxo de Dados
 ```
-CSV raw -> Azure Data Lake raw -> Bronze (Delta) -> Silver (Delta) -> Gold (Delta) -> Dashboard
+CSV local -> DBFS raw -> 00_bronze_orchestrator -> 01_bronze_ingestion -> Bronze (Delta)
+Bronze -> 02_silver_etl -> Silver (Delta) -> 03_gold_aggregations -> Gold (Delta) -> Dashboard
 ```
 
 ## III. Fontes de Dados
@@ -61,17 +65,15 @@ pip install -r requirements.txt
 
 1. Faça o download dos arquivos CSV de cada fonte.
 2. Coloque os arquivos na pasta `data/raw/` do repositório.
-3. Sugestão de nomes (o orquestrador reconhece os prefixos):
+3. Nomes reconhecidos pelo orquestrador:
    - `data/raw/Chicago_Marathon_2000-2025.csv`
    - `data/raw/London_2014_mass_results.csv`
    - `data/raw/London_2014_elite_results.csv`
    - ... (demais anos de 2014 a 2022)
    - `data/raw/NYC Marathon Results.csv`
-   - `data/raw/berlin_marathon_all_years.csv`
+   - `data/raw/Berlin_Marathon_1999-2025_original.csv`
 
 ### 4. Inspecionar os dados localmente
-
-Verifique se os arquivos estão corretos antes de subir para a nuvem:
 
 ```powershell
 python scripts/inspect_raw_data.py
@@ -88,8 +90,8 @@ No PowerShell:
 O script vai:
 - Instalar o **Azure CLI**, se necessário.
 - Fazer login no Azure.
-- Criar o Resource Group, Storage Account (ADLS Gen2), Container `marathon-data`, Databricks Workspace e Key Vault.
-- Exibir a **Storage Access Key** e a **URL do Databricks Workspace**.
+- Criar o Resource Group, Storage Account (ADLS Gen2), Container `marathon-data`, Databricks Workspace, Access Connector e Key Vault.
+- Exibir a **Storage Access Key** e o **Access Connector ID** (`ac-marathon-case-v2` ou similar).
 
 > **Atenção MFA:** se o `az login` falhar por exigência de autenticação multifator, use:
 >
@@ -97,7 +99,7 @@ O script vai:
 > az login --tenant <SEU_TENANT_ID>
 > ```
 
-### 6. Configurar credenciais do Databricks
+### 6. Configurar o Databricks Workspace
 
 1. Acesse a URL do Databricks Workspace exibida no passo anterior.
 2. Gere um **Personal Access Token** em `User Settings > Access tokens`.
@@ -106,18 +108,34 @@ O script vai:
 ```powershell
 $env:DATABRICKS_HOST = "https://<id>.azuredatabricks.net"
 $env:DATABRICKS_TOKEN = "dapi..."
-$env:STORAGE_ACCESS_KEY = "SUA_STORAGE_KEY_AQUI"
+$env:ACCESS_CONNECTOR_ID = "/subscriptions/.../accessConnectors/ac-marathon-case-v2"
 ```
 
-### 7. Salvar o segredo no Databricks
+O `ACCESS_CONNECTOR_ID` é exibido no final do `setup.ps1`.
+
+### 7. Criar o catálogo e external location no Unity Catalog
+
+```powershell
+python scripts/setup_unity_catalog.py
+```
+
+Esse script:
+- Cria um **Storage Credential** usando o Access Connector.
+- Cria um **External Location** apontando para `abfss://marathon-data@<storage>.dfs.core.windows.net/`.
+- Cria o catálogo `marathon` com managed storage.
+- Salva o segredo `catalog_name` no scope `marathon-scope`.
+
+> Importante: execute este passo **antes** de criar os outros segredos, pois os notebooks dependem do catálogo `marathon`.
+
+### 8. Salvar o segredo do config.yaml no Databricks
 
 ```powershell
 python scripts/setup_databricks_secrets.py
 ```
 
-Esse script cria o **Secret Scope** `marathon-scope` e salva a chave do ADLS com o nome `adls-access-key`.
+Esse script cria o **Secret Scope** `marathon-scope` e salva o conteúdo do arquivo `config/config.yaml` com o nome `config_yaml`.
 
-### 8. Subir os CSVs para o DBFS
+### 9. Subir os CSVs para o DBFS
 
 ```powershell
 python scripts/upload_raw_data.py
@@ -125,35 +143,38 @@ python scripts/upload_raw_data.py
 
 Os arquivos vão para `dbfs:/FileStore/marathon/raw/`.
 
-### 9. Criar o Databricks Workflow
+### 10. Criar o Databricks Workflow
 
 ```powershell
-$env:DATABRICKS_REPO_PATH = "/Repos/<usuario>/marathon-case-data-master"
+$env:DATABRICKS_REPO_PATH = "/Workspace/Repos/<usuario>/marathon-case-data-master"
 python scripts/create_databricks_workflow.py
 ```
 
 Substitua `DATABRICKS_REPO_PATH` pelo caminho do repositório importado no Databricks Repos.
 
-Se já tiver um cluster, pode usar:
+Se já tiver um cluster existente, pode usá-lo:
 
 ```powershell
-python scripts/create_databricks_workflow.py --cluster-id "<cluster-id>"
+$env:DATABRICKS_REPO_PATH = "/Workspace/Repos/<usuario>/marathon-case-data-master"
+$env:DATABRICKS_CLUSTER_ID = "<cluster-id>"
+python scripts/create_databricks_workflow.py
 ```
 
-### 10. Executar o Workflow
+### 11. Executar o Workflow
 
 No Databricks, acesse `Workflows > Jobs`, selecione `marathon-case-bronze-silver-gold` e clique em **Run Now**.
 
 O workflow executa em sequência:
-1. **00_bronze_orchestrator** — varre o DBFS e ingere todos os CSVs na Bronze.
-2. **02_silver_etl** — gera a tabela `silver.marathons`.
-3. **03_gold_aggregations** — gera as tabelas `gold.*` para o dashboard.
+1. **00_bronze_orchestrator** — varre o DBFS e ingere os CSVs por fonte na Bronze (uma chamada por fonte; London lido de uma só vez via glob).
+2. **01_bronze_ingestion** — executado internamente pelo orquestrador; lê, limpa e grava cada tabela Bronze.
+3. **02_silver_etl** — gera a tabela `silver.marathons`.
+4. **03_gold_aggregations** — gera as tabelas `gold.*` para o dashboard.
 
-### 11. Conectar o Dashboard
+### 12. Conectar o Dashboard
 
 As tabelas Gold estão prontas em `gold.*`. Você pode conectar:
 - **Power BI** usando o conector do Databricks.
-- **Streamlit** exportando as tabelas Gold para CSV/Parquet ou conectando via JDBC.
+- **Streamlit** conectando via JDBC/ODBC ou exportando as tabelas Gold para CSV/Parquet.
 
 ## V. Estrutura do Repositório
 
@@ -166,6 +187,8 @@ marathon-case-data-master/
 │   └── config.yaml
 ├── data/
 │   └── raw/                  # CSVs brutos (não versionados)
+├── docs/
+│   └── architecture.md
 ├── infrastructure/
 │   ├── main.bicep
 │   ├── resources.bicep
@@ -177,6 +200,7 @@ marathon-case-data-master/
 │   └── 03_gold_aggregations.py
 ├── scripts/
 │   ├── setup.ps1
+│   ├── setup_unity_catalog.py
 │   ├── setup_databricks_secrets.py
 │   ├── upload_raw_data.py
 │   ├── create_databricks_workflow.py
@@ -184,8 +208,6 @@ marathon-case-data-master/
 ├── src/
 │   ├── utils.py
 │   └── data_quality.py
-└── docs/
-    └── architecture.md
 ```
 
 ## VI. Melhorias e Considerações Finais
