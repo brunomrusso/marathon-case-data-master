@@ -2,18 +2,32 @@
 
 # MAGIC %md
 # MAGIC # Bronze — Orquestrador
-# MAGIC Varre a pasta raw do DBFS e executa a ingestão Bronze uma vez por fonte.
-# MAGIC Para fontes multi-arquivo (London), usa glob para ler todos de uma vez.
+# MAGIC Lê a camada `raw` do ADLS e executa a ingestão Bronze uma vez por fonte.
+# Magic
+
+# COMMAND ----------
+
+# MAGIC %pip install pyyaml
 
 # COMMAND ----------
 
 import re
+import yaml
 
-dbutils.widgets.text("raw_dir", "dbfs:/FileStore/marathon/raw", "raw_dir")
+dbutils.widgets.text("raw_dir", "", "raw_dir")
 
 # COMMAND ----------
 
+config_yaml = dbutils.secrets.get("marathon-scope", "config_yaml")
+config = yaml.safe_load(config_yaml)
+storage = config["azure"]["storage_account"]
+container = config["azure"]["container"]
+
 raw_dir = dbutils.widgets.get("raw_dir")
+if not raw_dir:
+    raw_dir = f"abfss://{container}@{storage}.dfs.core.windows.net/raw"
+raw_dir = raw_dir.rstrip("/")
+
 files = [f for f in dbutils.fs.ls(raw_dir) if f.path.endswith(".csv")]
 
 def classify(file_name):

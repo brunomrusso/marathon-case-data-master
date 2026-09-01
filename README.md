@@ -11,13 +11,15 @@ Desenvolver uma solução completa de Engenharia de Dados para ingerir, processa
 - **Armazenamento:** Azure Data Lake Storage Gen2 com Delta Lake
 - **Processamento:** Azure Databricks + PySpark
 - **Orquestração:** Databricks Workflows
+- **Ingestão:** File Arrival Trigger no Databricks Workflow
 - **Governança:** Unity Catalog, External Locations e Managed Identities
 - **Observabilidade:** Databricks Job Metrics + tabela `bronze.file_metadata`
 - **Segurança:** Azure Key Vault, RBAC, criptografia, mascaramento e Access Connector
 - **Dashboard:** Power BI ou Streamlit
 
 ### Arquitetura Medalhão
-- **Bronze:** ingestão dos CSVs brutos das quatro origens, com registro de arquivos processados e carga incremental via `MERGE`. Tabelas **externas** no ADLS (`bronze/<source>`).
+- **Raw:** arquivos CSV brutos armazenados no ADLS (`raw/`), servindo como landing zone.
+- **Bronze:** ingestão dos CSVs com registro de arquivos processados e carga incremental via `MERGE`. Tabelas **externas** no ADLS (`bronze/<source>`).
 - **Silver:** limpeza, padronização de schema, integração das fontes, mascaramento/anonimização e validação. Tabela **externa** no ADLS (`silver/marathons`).
 - **Gold:** agregações e métricas para alimentar o dashboard. Tabelas **externas** no ADLS (`gold/<tabela>`).
 
@@ -25,7 +27,7 @@ Todas as camadas são catalogadas no **Unity Catalog** (`marathon.bronze.*`, `ma
 
 ### Fluxo de Dados
 ```
-CSV local -> DBFS raw -> 00_bronze_orchestrator -> 01_bronze_ingestion -> Bronze (Delta)
+CSV local -> ADLS raw/ -> File Arrival Trigger -> 00_bronze_orchestrator -> 01_bronze_ingestion -> Bronze (Delta)
 Bronze -> 02_silver_etl -> Silver (Delta) -> 03_gold_aggregations -> Gold (Delta) -> Dashboard
 ```
 
@@ -91,7 +93,7 @@ O script vai:
 - Instalar o **Azure CLI**, se necessário.
 - Fazer login no Azure.
 - Criar o Resource Group, Storage Account (ADLS Gen2), Container `marathon-data`, Databricks Workspace, Access Connector e Key Vault.
-- Exibir a **Storage Access Key** e o **Access Connector ID** (`ac-marathon-case-v2` ou similar).
+- Exibir o **Storage Account**, a **Storage Access Key** e o **Access Connector ID**.
 
 > **Atenção MFA:** se o `az login` falhar por exigência de autenticação multifator, use:
 >
@@ -109,9 +111,10 @@ O script vai:
 $env:DATABRICKS_HOST = "https://<id>.azuredatabricks.net"
 $env:DATABRICKS_TOKEN = "dapi..."
 $env:ACCESS_CONNECTOR_ID = "/subscriptions/.../accessConnectors/ac-marathon-case-v2"
+$env:STORAGE_ACCESS_KEY = "SUA_STORAGE_KEY_AQUI"
 ```
 
-O `ACCESS_CONNECTOR_ID` é exibido no final do `setup.ps1`.
+O `ACCESS_CONNECTOR_ID` e a `STORAGE_ACCESS_KEY` são exibidos no final do `setup.ps1`.
 
 ### 7. Criar o catálogo e external location no Unity Catalog
 
@@ -135,15 +138,17 @@ python scripts/setup_databricks_secrets.py
 
 Esse script cria o **Secret Scope** `marathon-scope` e salva o conteúdo do arquivo `config/config.yaml` com o nome `config_yaml`.
 
-### 9. Subir os CSVs para o DBFS
+### 9. Subir os CSVs para a camada raw do ADLS
 
 ```powershell
 python scripts/upload_raw_data.py
 ```
 
-Os arquivos vão para `dbfs:/FileStore/marathon/raw/`.
+Os arquivos vão para `abfss://marathon-data@<storage>.dfs.core.windows.net/raw/`.
 
-### 10. Criar o Databricks Workflow
+> A partir deste ponto, novos arquivos colocados na pasta `raw/` do ADLS disparam automaticamente o pipeline via **File Arrival Trigger** (passo 10).
+
+### 10. Criar o Databricks Workflow com File Arrival Trigger
 
 ```powershell
 $env:DATABRICKS_REPO_PATH = "/Workspace/Repos/<usuario>/marathon-case-data-master"
@@ -151,6 +156,8 @@ python scripts/create_databricks_workflow.py
 ```
 
 Substitua `DATABRICKS_REPO_PATH` pelo caminho do repositório importado no Databricks Repos.
+
+O workflow criado já vem com um trigger do tipo **File Arrival** que monitora a pasta `raw/` do ADLS. Sempre que novos arquivos chegarem, o Databricks inicia o cluster, executa Bronze → Silver → Gold e desliga o cluster automaticamente.
 
 Se já tiver um cluster existente, pode usá-lo:
 
@@ -162,10 +169,12 @@ python scripts/create_databricks_workflow.py
 
 ### 11. Executar o Workflow
 
-No Databricks, acesse `Workflows > Jobs`, selecione `marathon-case-bronze-silver-gold` e clique em **Run Now**.
+A primeira execução pode ser iniciada manualmente no Databricks em `Workflows > Jobs`, selecionando `marathon-case-bronze-silver-gold` e clicando em **Run Now**.
+
+Nas próximas vezes, o pipeline dispara sozinho quando novos arquivos chegam na camada `raw`.
 
 O workflow executa em sequência:
-1. **00_bronze_orchestrator** — varre o DBFS e ingere os CSVs por fonte na Bronze (uma chamada por fonte; London lido de uma só vez via glob).
+1. **00_bronze_orchestrator** — lê `raw/` do ADLS e ingere os CSVs por fonte na Bronze (uma chamada por fonte; London lido de uma só vez via glob).
 2. **01_bronze_ingestion** — executado internamente pelo orquestrador; lê, limpa e grava cada tabela Bronze.
 3. **02_silver_etl** — gera a tabela `silver.marathons`.
 4. **03_gold_aggregations** — gera as tabelas `gold.*` para o dashboard.
