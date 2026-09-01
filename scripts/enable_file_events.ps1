@@ -34,10 +34,10 @@ $roles = @(
 
 foreach ($role in $roles) {
     Write-Host "Atribuindo $role no storage account..."
-    az role assignment create --assignee $principalId --role $role --scope $scopeStorage
+    az role assignment create --assignee-object-id $principalId --assignee-principal-type ServicePrincipal --role $role --scope $scopeStorage
 }
 
 Write-Host "Atribuindo EventGrid EventSubscription Contributor no resource group..."
-az role assignment create --assignee $principalId --role "EventGrid EventSubscription Contributor" --scope $scopeRG
+az role assignment create --assignee-object-id $principalId --assignee-principal-type ServicePrincipal --role "EventGrid EventSubscription Contributor" --scope $scopeRG
 
 Write-Host "Roles atribuidas. Pode levar alguns minutos para propagar no Azure."
