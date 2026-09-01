@@ -1,5 +1,10 @@
 # Habilita file events para a external location do Databricks
 # Atribui as roles necessarias ao system-assigned managed identity do Azure Access Connector
+#
+# PRE-REQUISITO: registrar o provider EventGrid antes de rodar este script:
+#   az provider register --namespace Microsoft.EventGrid --subscription <SUBSCRIPTION_ID>
+#   az provider show --namespace Microsoft.EventGrid --query registrationState -o tsv
+#   (aguarda retornar "Registered")
 
 param(
     [string]$SubscriptionId = "",

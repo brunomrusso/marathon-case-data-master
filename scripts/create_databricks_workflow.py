@@ -51,14 +51,26 @@ def main():
         },
     ]
 
-    trigger = {
-        "pause_status": "UNPAUSED",
-        "file_arrival": {
-            "url": raw_url,
-            "min_time_between_triggers_seconds": 900,
-            "wait_after_last_change_seconds": 60,
-        },
-    }
+    # Trigger: file_arrival (requer EventGrid registrado) ou schedule (mais simples)
+    trigger_type = os.environ.get("TRIGGER_TYPE", "file_arrival")
+    if trigger_type == "schedule":
+        trigger = {
+            "pause_status": "UNPAUSED",
+            "schedule": {
+                "quartz_cron_expression": "0 0/15 * * * ?",
+                "timezone_id": "America/Sao_Paulo",
+                "pause_status": "UNPAUSED",
+            },
+        }
+    else:
+        trigger = {
+            "pause_status": "UNPAUSED",
+            "file_arrival": {
+                "url": raw_url,
+                "min_time_between_triggers_seconds": 900,
+                "wait_after_last_change_seconds": 60,
+            },
+        }
 
     if cluster_id:
         for task in tasks:

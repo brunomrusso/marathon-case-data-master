@@ -132,25 +132,45 @@ Esse script:
 
 ### 7.1. Habilitar file events para o File Arrival Trigger
 
-O File Arrival Trigger do Databricks usa **managed file events** do Azure (EventGrid + Storage Queue). Para isso, o managed identity do Access Connector precisa de roles extras:
+O File Arrival Trigger do Databricks usa **managed file events** do Azure (EventGrid + Storage Queue). Isso requer alguns passos obrigatórios:
+
+**a) Registrar o provider Microsoft.EventGrid na subscription:**
+
+```powershell
+az provider register --namespace Microsoft.EventGrid --subscription <SUBSCRIPTION_ID>
+```
+
+Aguarde 2-5 min e verifique:
+
+```powershell
+az provider show --namespace Microsoft.EventGrid --subscription <SUBSCRIPTION_ID> --query registrationState -o tsv
+```
+
+Deve retornar `Registered`.
+
+**b) Atribuir as roles necessárias ao managed identity do Access Connector:**
 
 ```powershell
 .\scripts\enable_file_events.ps1
 ```
 
-O script atribui:
+O script atribui ao managed identity do Access Connector:
 - `Storage Blob Data Contributor`
 - `Storage Queue Data Contributor`
 - `Storage Account Contributor`
 - `EventGrid EventSubscription Contributor`
 
-Pode levar alguns minutos para as roles propagarem no Azure. Para verificar, obtenha o `principalId` exibido pelo script e liste:
+Para verificar (use o `principalId` exibido pelo script):
 
 ```powershell
 az role assignment list --assignee-object-id <PRINCIPAL_ID> --all --output table
 ```
 
 Você deve ver as 4 roles atribuídas.
+
+> **Importante:** O Databricks provisiona automaticamente um EventGrid System Topic no storage account na primeira execução do trigger. Isso é esperado e indica que o File Arrival está funcionando. O status do trigger deve mudar de `failed` para `no run triggered` (aguardando novos arquivos) após o provisionamento.
+>
+> Se o trigger continuar falhando por mais de 30 min após os passos acima, pause e despausa o trigger em **Workflows > Jobs > marathon-case-bronze-silver-gold > Triggers** para forçar um retry limpo.
 
 ### 8. Salvar o segredo do config.yaml no Databricks
 
@@ -235,6 +255,7 @@ marathon-case-data-master/
 │   ├── setup_databricks_secrets.py
 │   ├── upload_raw_data.py
 │   ├── create_databricks_workflow.py
+│   ├── enable_file_events.ps1
 │   └── inspect_raw_data.py
 ├── src/
 │   ├── utils.py
