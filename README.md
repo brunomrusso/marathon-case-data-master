@@ -130,6 +130,22 @@ Esse script:
 
 > Importante: execute este passo **antes** de criar os outros segredos, pois os notebooks dependem do catálogo `marathon`.
 
+### 7.1. Habilitar file events para o File Arrival Trigger
+
+O File Arrival Trigger do Databricks usa **managed file events** do Azure (EventGrid + Storage Queue). Para isso, o managed identity do Access Connector precisa de roles extras:
+
+```powershell
+.\scripts\enable_file_events.ps1
+```
+
+O script atribui:
+- `Storage Blob Data Contributor`
+- `Storage Queue Data Contributor`
+- `Storage Account Contributor`
+- `EventGrid EventSubscription Contributor`
+
+Pode levar alguns minutos para as roles propagarem no Azure.
+
 ### 8. Salvar o segredo do config.yaml no Databricks
 
 ```powershell
