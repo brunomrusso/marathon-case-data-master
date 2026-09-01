@@ -24,6 +24,10 @@ Solução de Engenharia de Dados na Azure para processar e visualizar dados das 
 - Aplica mascaramento e anonimização de atletas.
 - Garante qualidade com regras de validação.
 - Tabela **externa** armazenada em `abfss://.../silver/marathons`.
+- Tabelas de referência:
+  - `weather.marathon_metadata` — data, cidade, país, latitude e longitude de cada prova (gerada via heurística ou carregada de CSV).
+  - `weather.raw_cache` — cache dos dados de clima obtidos da Open-Meteo.
+- Tabela `silver.marathons_with_weather` enriquece os resultados com condições climáticas do dia da prova (temperatura, precipitação, vento) via API pública Open-Meteo.
 
 ### Gold
 - Gera agregações e métricas para o dashboard.
@@ -37,8 +41,12 @@ Solução de Engenharia de Dados na Azure para processar e visualizar dados das 
 3. `00_bronze_orchestrator` agrupa os CSVs por fonte e executa `01_bronze_ingestion` uma vez por origem. Para London, usa um glob para ler todos os anos de uma só vez.
 4. `01_bronze_ingestion` lê os CSVs, sanitiza colunas, deduplica e grava na camada Bronze.
 5. `02_silver_etl` processa as tabelas Bronze e gera a tabela unificada `silver.marathons`.
-6. `03_gold_aggregations` cria as tabelas Gold.
-7. O dashboard consome as tabelas Gold.
+6. `04_weather_enrichment`:
+   - Gera a tabela `weather.marathon_metadata` (data, local, coordenadas de cada prova).
+   - Busca o clima histórico na Open-Meteo e armazena em `weather.raw_cache`.
+   - Cria `silver.marathons_with_weather` juntando resultados e clima.
+7. `03_gold_aggregations` cria as tabelas Gold, incluindo `gold.weather_impact`.
+8. O dashboard consome as tabelas Gold.
 
 ## Governança e Segurança
 

@@ -2,7 +2,7 @@
 
 # MAGIC %md
 # MAGIC # Gold — Agregações
-# MAGIC Geração das tabelas Gold para alimentar o dashboard final.
+# MAGIC Geração das tabelas Gold para alimentar o dashboard final. Usa `silver.marathons_with_weather` quando disponível.
 
 # COMMAND ----------
 
@@ -46,7 +46,12 @@ def save_gold(df, table, partition_cols=None):
         writer = writer.partitionBy(*partition_cols)
     writer.saveAsTable(f"gold.{table}")
 
-silver = spark.table("silver.marathons")
+# Usa Silver enriquecida com clima; se ainda não existir, cai de volta para silver.marathons
+silver = (
+    spark.table("silver.marathons_with_weather")
+    if "marathons_with_weather" in [t.name for t in spark.catalog.listTables("silver")]
+    else spark.table("silver.marathons")
+)
 
 # COMMAND ----------
 
@@ -146,6 +151,30 @@ age_gender_profile = (silver
     ))
 
 save_gold(age_gender_profile, "age_gender_profile", ["source", "year"])
+
+# COMMAND ----------
+
+# 8. gold.weather_impact (só quando há dados de clima)
+try:
+    weather_cols = [c for c in silver.columns if c in [
+        "temperature_max_c", "temperature_min_c", "temperature_mean_c",
+        "apparent_temperature_max_c", "precipitation_mm", "windspeed_max_kmh"
+    ]]
+    if weather_cols:
+        weather_impact = (silver
+            .filter(col("finish_time_sec").isNotNull())
+            .groupBy("source", "year", "marathon_name", *weather_cols)
+            .agg(
+                count("*").alias("total_athletes"),
+                avg("finish_time_sec").alias("avg_finish_time_sec"),
+                min("finish_time_sec").alias("record_time_sec")
+            ))
+        save_gold(weather_impact, "weather_impact", ["source", "year"])
+        print("Tabela gold.weather_impact gerada.")
+    else:
+        print("Dados de clima não disponíveis; gold.weather_impact ignorada.")
+except Exception as e:
+    print(f"Ignorando weather_impact: {e}")
 
 # COMMAND ----------
 

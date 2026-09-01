@@ -44,8 +44,14 @@ def main():
             "description": "Run Silver ETL",
         },
         {
-            "task_key": "gold_aggregations",
+            "task_key": "weather_enrichment",
             "depends_on": [{"task_key": "silver_etl"}],
+            "notebook_task": {"notebook_path": f"{repo_path}/notebooks/04_weather_enrichment"},
+            "description": "Enrich Silver with weather data",
+        },
+        {
+            "task_key": "gold_aggregations",
+            "depends_on": [{"task_key": "weather_enrichment"}],
             "notebook_task": {"notebook_path": f"{repo_path}/notebooks/03_gold_aggregations"},
             "description": "Generate Gold tables",
         },

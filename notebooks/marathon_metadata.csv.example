@@ -1,0 +1,5 @@
+source,year,marathon_name,city,country,latitude,longitude,race_date
+berlin,2023,BMW Berlin Marathon,Berlin,DEU,52.5200,13.4050,2023-09-24
+chicago,2023,Chicago Marathon,Chicago,USA,41.8781,-87.6298,2023-10-08
+nyc,2023,TCS New York City Marathon,New York,USA,40.7128,-74.0060,2023-11-05
+london,2023,TCS London Marathon,London,GBR,51.5074,-0.1278,2023-04-23
