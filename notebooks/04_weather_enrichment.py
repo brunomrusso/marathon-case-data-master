@@ -5,7 +5,8 @@
 # MAGIC Enriquece os dados das maratonas com as condições climáticas do dia da prova, usando a API pública Open-Meteo (sem API key).
 # MAGIC
 # MAGIC Camadas:
-# MAGIC - Bronze: `bronze.marathon_metadata` (data/local das provas) e `bronze.weather_raw` (dados brutos da API).
+# MAGIC - Raw: `raw/weather_api/` — JSON bruto retornado pela API (padrão raw landing, compatível com Auto Loader).
+# MAGIC - Bronze: `bronze.marathon_metadata` (data/local das provas) e `bronze.weather_raw` (dados parseados da API).
 # MAGIC - Silver: `silver.marathons_with_weather` (resultados + clima).
 # MAGIC
 # MAGIC A API retorna temperatura, precipitação e vento para o dia da prova. Rastreia run_id/batch_id e loga métricas de qualidade.
@@ -286,8 +287,9 @@ except Exception:
 
 # COMMAND ----------
 
-# Tabela cache de clima na Bronze (idempotente: não re-consulta APIs para datas já buscadas)
+# Verifica cache na Bronze para buscar apenas APIs novas (mesmo com raw files, evita re-chamadas)
 cache_path = f"abfss://{container}@{storage}.dfs.core.windows.net/bronze/weather_raw"
+raw_weather_api_path = f"abfss://{container}@{storage}.dfs.core.windows.net/raw/weather_api"
 
 try:
     existing_weather = spark.table("bronze.weather_raw")
@@ -300,7 +302,7 @@ except Exception:
 
 # COMMAND ----------
 
-# Busca na Open-Meteo Archive API
+# Busca na Open-Meteo Archive API e persiste JSON bruto no container raw
 
 
 def fetch_weather(latitude, longitude, race_date):
@@ -319,24 +321,14 @@ def fetch_weather(latitude, longitude, race_date):
     try:
         resp = requests.get(url, params=params, timeout=30)
         resp.raise_for_status()
-        data = resp.json()
-        daily = data.get("daily", {})
-        if not daily or not daily.get("time"):
-            return None
-        return {
-            "temperature_max_c": float(daily["temperature_2m_max"][0]) if daily["temperature_2m_max"][0] is not None else None,
-            "temperature_min_c": float(daily["temperature_2m_min"][0]) if daily["temperature_2m_min"][0] is not None else None,
-            "temperature_mean_c": float(daily["temperature_2m_mean"][0]) if daily["temperature_2m_mean"][0] is not None else None,
-            "apparent_temperature_max_c": float(daily["apparent_temperature_max"][0]) if daily["apparent_temperature_max"][0] is not None else None,
-            "precipitation_mm": float(daily["precipitation_sum"][0]) if daily["precipitation_sum"][0] is not None else None,
-            "windspeed_max_kmh": float(daily["windspeed_10m_max"][0]) if daily["windspeed_10m_max"][0] is not None else None,
-        }
+        return resp.json()
     except Exception as e:
         print(f"Erro ao buscar clima para {latitude},{longitude} em {race_date}: {e}")
         return None
 
 
 fetch_rows = metadata_to_fetch.toPandas()
+raw_json_files = []
 weather_results = []
 api_failures = 0
 
@@ -345,10 +337,27 @@ for _, row in fetch_rows.iterrows():
     if not race_date:
         api_failures += 1
         continue
-    weather = fetch_weather(row["latitude"], row["longitude"], race_date)
-    if weather is None:
+
+    raw_json = fetch_weather(row["latitude"], row["longitude"], race_date)
+    if raw_json is None:
         api_failures += 1
         continue
+
+    # Persiste JSON bruto no container raw, mantendo o padrão raw -> bronze
+    raw_file_path = f"{raw_weather_api_path}/{row['source']}/{int(row['year'])}/{race_date}.json"
+    try:
+        dbutils.fs.put(raw_file_path, json.dumps(raw_json), overwrite=True)
+        raw_json_files.append(raw_file_path)
+    except Exception as e:
+        print(f"Falha ao salvar JSON bruto em {raw_file_path}: {e}")
+        api_failures += 1
+        continue
+
+    daily = raw_json.get("daily", {})
+    if not daily or not daily.get("time"):
+        api_failures += 1
+        continue
+
     weather_results.append(
         {
             "source": row["source"],
@@ -359,12 +368,18 @@ for _, row in fetch_rows.iterrows():
             "latitude": row["latitude"],
             "longitude": row["longitude"],
             "race_date": race_date,
-            **weather,
+            "temperature_max_c": float(daily["temperature_2m_max"][0]) if daily["temperature_2m_max"][0] is not None else None,
+            "temperature_min_c": float(daily["temperature_2m_min"][0]) if daily["temperature_2m_min"][0] is not None else None,
+            "temperature_mean_c": float(daily["temperature_2m_mean"][0]) if daily["temperature_2m_mean"][0] is not None else None,
+            "apparent_temperature_max_c": float(daily["apparent_temperature_max"][0]) if daily["apparent_temperature_max"][0] is not None else None,
+            "precipitation_mm": float(daily["precipitation_sum"][0]) if daily["precipitation_sum"][0] is not None else None,
+            "windspeed_max_kmh": float(daily["windspeed_10m_max"][0]) if daily["windspeed_10m_max"][0] is not None else None,
             "api_response_timestamp": datetime.utcnow().isoformat(),
             "ingestion_date": datetime.utcnow().strftime("%Y-%m-%d"),
         }
     )
 
+print(f"{len(raw_json_files)} JSONs brutos salvos em {raw_weather_api_path}")
 print(f"{len(weather_results)} registros de clima obtidos; {api_failures} falhas.")
 
 # COMMAND ----------
@@ -463,7 +478,7 @@ log_data_quality(
     schema_drift_flag=False,
     execution_time_sec=round(execution_time, 2),
     status="WARN" if api_failures > 0 else "PASS",
-    details=f"Silver rows enriquecidos: {silver_with_weather_count}; weather_null_pct: {weather_null_pct}",
+    details=f"JSONs brutos salvos: {len(raw_json_files)}; Silver rows enriquecidos: {silver_with_weather_count}; weather_null_pct: {weather_null_pct}",
 )
 
 # COMMAND ----------

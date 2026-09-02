@@ -7,9 +7,10 @@ Solução de Engenharia de Dados na Azure para processar e visualizar dados das 
 ## Camadas
 
 ### Raw
-- Landing zone para os arquivos CSV brutos.
+- Landing zone para os arquivos CSV brutos e para os JSONs brutos da API Open-Meteo.
 - Armazenada em `abfss://marathon-data@<storage>.dfs.core.windows.net/raw/`.
-- A ingestão é acionada por **File Arrival Trigger** sempre que novos arquivos chegam.
+- Os arquivos `raw/weather_api/{source}/{year}/{race_date}.json` representam o landing de dados externos via API, mantendo o mesmo padrão raw → bronze.
+- A ingestão CSV é acionada por **File Arrival Trigger** sempre que novos arquivos chegam.
 
 ### Bronze
 - Recebe os arquivos CSV brutos de cada origem.
@@ -25,7 +26,7 @@ Solução de Engenharia de Dados na Azure para processar e visualizar dados das 
 - Garante qualidade com regras de validação.
 - Tabela **externa** armazenada em `abfss://.../silver/marathons`.
 - Tabela `bronze.marathon_metadata` — data, cidade, país, latitude e longitude de cada prova (gerada via heurística ou carregada de CSV).
-- Tabela `bronze.weather_raw` — cache dos dados de clima obtidos da API pública Open-Meteo.
+- Tabela `bronze.weather_raw` — cache dos dados de clima parseados a partir dos JSONs brutos em `raw/weather_api/`.
 - Tabela `silver.marathons_with_weather` enriquece os resultados com condições climáticas do dia da prova (temperatura, precipitação, vento).
 
 ### Gold
