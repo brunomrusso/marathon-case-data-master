@@ -18,8 +18,9 @@ from datetime import datetime, timezone
 
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import (
-    col, count, avg, min, max, sum, round, when, expr
+    col, count, avg, min, max, sum, when, expr
 )
+from pyspark.sql.functions import round as spark_round
 from pyspark.sql.types import (
     StructType, StructField, StringType, IntegerType, LongType, DoubleType, BooleanType, TimestampType
 )
@@ -160,7 +161,7 @@ kpi_summary = (silver
         sum(when(col("gender") == "F", 1).otherwise(0)).alias("female_count"),
         sum(when(col("gender") == "M", 1).otherwise(0)).alias("male_count")
     )
-    .withColumn("female_pct", round(col("female_count") / col("total_athletes") * 100, 2)))
+    .withColumn("female_pct", spark_round(col("female_count") / col("total_athletes") * 100, 2)))
 
 save_gold(kpi_summary, "kpi_summary", ["source", "year"])
 
@@ -174,7 +175,7 @@ finishers_by_year = (silver
         sum(when(col("gender") == "F", 1).otherwise(0)).alias("female_finishers"),
         sum(when(col("gender") == "M", 1).otherwise(0)).alias("male_finishers")
     )
-    .withColumn("female_pct", round(col("female_finishers") / col("total_finishers") * 100, 2)))
+    .withColumn("female_pct", spark_round(col("female_finishers") / col("total_finishers") * 100, 2)))
 
 save_gold(finishers_by_year, "finishers_by_year", ["source", "year"])
 
