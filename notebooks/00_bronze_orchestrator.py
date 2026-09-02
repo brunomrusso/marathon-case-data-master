@@ -122,20 +122,10 @@ def log_data_quality(
     )]
     df = spark.createDataFrame(row, schema=schema)
 
-    try:
-        existing = spark.table("monitoring.data_quality_log")
-        combined = existing.unionByName(df, allowMissingColumns=False)
-    except Exception:
-        combined = df
-
-    try:
-        dbutils.fs.rm(monitoring_path, recurse=True)
-    except Exception:
-        pass
-
-    combined.write.format("delta").mode("overwrite").option("path", monitoring_path).saveAsTable(
-        "monitoring.data_quality_log"
-    )
+    # Append preserva historico e evita conflito de schema de overwrite em tabela lida/escrita
+    df.write.format("delta").mode("append").option("mergeSchema", "true").option(
+        "path", monitoring_path
+    ).saveAsTable("monitoring.data_quality_log")
 
 
 def classify(file_name):
