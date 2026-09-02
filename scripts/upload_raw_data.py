@@ -40,6 +40,13 @@ def main():
     account_url = f"https://{storage}.blob.core.windows.net"
     blob_service_client = BlobServiceClient(account_url=account_url, credential=storage_key)
 
+    try:
+        blob_service_client.create_container(container)
+        print(f"Container '{container}' criado.")
+    except Exception as e:
+        if "ContainerAlreadyExists" not in str(e):
+            raise
+
     csv_files = sorted(f for f in local_dir.iterdir() if f.is_file() and f.suffix.lower() == ".csv")
     if not csv_files:
         print(f"Nenhum CSV encontrado em {local_dir}")

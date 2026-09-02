@@ -156,12 +156,20 @@ def classify(file_name):
 if not files:
     raise FileNotFoundError(f"Nenhum arquivo CSV encontrado em {raw_dir}. Suba os arquivos para a pasta raw/ antes de executar.")
 
-# Agrupa arquivos por fonte
+# Agrupa arquivos por fonte (ignora arquivos que não sejam CSVs de fontes conhecidas, ex: marathon_metadata.csv)
 sources = {}
+ignored_files = []
 for f in files:
-    source, delimiter = classify(f.name)
-    sources.setdefault(source, {"delimiter": delimiter, "paths": []})
-    sources[source]["paths"].append(f.path)
+    try:
+        source, delimiter = classify(f.name)
+        sources.setdefault(source, {"delimiter": delimiter, "paths": []})
+        sources[source]["paths"].append(f.path)
+    except ValueError as e:
+        ignored_files.append(f.name)
+        print(f"Ignorando arquivo nao reconhecido: {e}")
+
+if ignored_files:
+    print(f"Arquivos ignorados no orquestrador: {ignored_files}")
 
 # Chama o 01 uma vez por fonte. Para London, passa um glob.
 for source, info in sources.items():
@@ -191,7 +199,8 @@ log_data_quality(
     step="bronze_orchestrator",
     row_count_in=len(files),
     row_count_out=len(sources),
-    details=f"Fontes processadas: {list(sources.keys())}",
+    rejected_records=len(ignored_files),
+    details=f"Fontes processadas: {list(sources.keys())}; ignorados: {ignored_files}",
 )
 
 if not sources:
