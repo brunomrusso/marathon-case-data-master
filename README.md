@@ -18,17 +18,35 @@ Desenvolver uma solução completa de Engenharia de Dados para ingerir, processa
 - **Dashboard:** Power BI ou Streamlit
 
 ### Arquitetura Medalhão
-- **Raw:** arquivos CSV brutos armazenados no ADLS (`raw/`), servindo como landing zone.
-- **Bronze:** ingestão dos CSVs com registro de arquivos processados e carga incremental via `MERGE`. Tabelas **externas** no ADLS (`bronze/<source>`).
-- **Silver:** limpeza, padronização de schema, integração das fontes, mascaramento/anonimização e validação. Tabela **externa** no ADLS (`silver/marathons`).
-- **Gold:** agregações e métricas para alimentar o dashboard. Tabelas **externas** no ADLS (`gold/<tabela>`).
+- **Raw:** landing zone para CSV de resultados e JSONs brutos da API Open-Meteo (`raw/weather_api/`). Nenhum dado é processado nesta camada.
+- **Bronze:** ingestão dos CSVs com registro de arquivos processados, carga incremental via `MERGE` e detecção de schema drift. Tabelas **externas** no ADLS (`bronze/<source>`). Inclui `bronze.marathon_metadata` e `bronze.weather_raw`.
+- **Silver:** limpeza, padronização de schema, integração das fontes, mascaramento/anonimização e validação. Inclui `silver.marathons` e `silver.marathons_with_weather` (enriquecida com clima). Tabelas **externas** no ADLS.
+- **Gold:** agregações e métricas para alimentar o dashboard. Tabelas **externas** no ADLS (`gold/<tabela>`). Ver seção de tabelas Gold.
+- **Monitoring:** tabela `monitoring.data_quality_log` com métricas de qualidade por camada, rastreabilidade end-to-end via `run_id`/`batch_id`, schema drift e tempo de execução.
 
 Todas as camadas são catalogadas no **Unity Catalog** (`marathon.bronze.*`, `marathon.silver.*`, `marathon.gold.*`), mas com os arquivos Delta armazenados em locais controlados pelo ADLS.
 
 ### Fluxo de Dados
 ```
-CSV local -> ADLS raw/ -> File Arrival Trigger -> 00_bronze_orchestrator -> 01_bronze_ingestion -> Bronze (Delta)
-Bronze -> 02_silver_etl -> Silver (Delta) -> 03_gold_aggregations -> Gold (Delta) -> Dashboard
+CSV local ──► ADLS raw/ ──► File Arrival Trigger ──► 00_bronze_orchestrator (gera run_id/batch_id)
+                                                              │
+                                              ┌───────────────┘
+                                              ▼
+                                    01_bronze_ingestion ──► Bronze (Delta) + monitoring.data_quality_log
+                                              │
+                                              ▼
+                                    02_silver_etl ──► silver.marathons + monitoring.data_quality_log
+                                              │
+                                              ▼
+                                    04_weather_enrichment ──► Open-Meteo API ──► raw/weather_api/ (JSON bruto)
+                                              │                               ──► bronze.weather_raw
+                                              │                               ──► silver.marathons_with_weather
+                                              │
+                                              ▼
+                                    03_gold_aggregations ──► gold.* + monitoring.data_quality_log
+                                              │
+                                              ▼
+                                         Dashboard
 ```
 
 ## III. Fontes de Dados
@@ -227,7 +245,22 @@ O workflow executa em sequência:
 >
 > **Sobre as datas das provas:** O notebook `04_weather_enrichment` gera `bronze.marathon_metadata` estimando a data de cada prova com base em padrões históricos (ex: último domingo de setembro para Berlim). Se quiser datas exatas, crie um arquivo `data/raw/marathon_metadata.csv` com as colunas `source,year,marathon_name,city,country,latitude,longitude,race_date` e suba para o ADLS raw/. O notebook faz MERGE/upsert nessa tabela e usa o CSV automaticamente quando ele existe. O exemplo está em `notebooks/marathon_metadata.csv.example`.
 
-### 12. Conectar o Dashboard
+### 12. Tabelas Gold — Finalidade
+
+Todas as tabelas Gold ficam em `marathon.gold.*` e são o ponto de consumo do dashboard.
+
+| Tabela | Finalidade |
+|---|---|
+| `gold.kpi_summary` | KPIs principais por maratona e ano: total de finishers, tempo médio, record da prova e % feminino. Ponto de entrada do dashboard. |
+| `gold.finishers_by_year` | Evolução histórica do número de finishers por maratona. Permite visualizar crescimento ou queda de participação ao longo dos anos. |
+| `gold.top_countries` | Ranking dos países com mais finishers por maratona, útil para análise de diversidade geográfica. |
+| `gold.athletes_by_country` | Contagem de atletas únicos por país e maratona, diferenciando participação individual de contagem de finishes. |
+| `gold.times_distribution` | Distribuição dos tempos de chegada em faixas (ex: < 3h, 3–4h, 4–5h, > 5h) por maratona e ano. Permite análise de perfil de desempenho. |
+| `gold.marathon_comparison` | Comparativo direto entre as quatro maratonas: tempo médio, record, total de finishers e % feminino. Ideal para gráficos de barras comparativos. |
+| `gold.age_gender_profile` | Perfil demográfico dos finishers: contagem e tempo médio por grupo etário e gênero. Permite identificar o perfil dominante em cada prova. |
+| `gold.weather_impact` | Correlação entre condições climáticas (temperatura, precipitação, vento) e desempenho médio dos atletas. Disponível somente quando `silver.marathons_with_weather` está populada. |
+
+### 13. Conectar o Dashboard
 
 As tabelas Gold estão prontas em `gold.*`. Você pode conectar:
 - **Power BI** usando o conector do Databricks.
@@ -277,4 +310,13 @@ marathon-case-data-master/
 - Otimizar o particionamento das tabelas Gold conforme os padrões de acesso do dashboard.
 - Expandir as fontes para Boston, Tóquio e outras majors, aproveitando a arquitetura extensível.
 - Buscar datas exatas das provas via API de calendário/esportes para substituir a estimativa heurística usada no `04_weather_enrichment`.
-- Migrar `monitoring.data_quality_log` para append-only com particionamento por `batch_id` para histórico completo de runs.
+- `monitoring.data_quality_log` já funciona em modo append; adicionar particionamento por `batch_id` para histórico de longo prazo.
+
+## VII. Changelog
+
+### [2025] — Ajustes de execução e correções de pipeline
+
+- **Observabilidade append-only:** tabela `monitoring.data_quality_log` migrada de `overwrite` para `append` com `mergeSchema=true`, eliminando conflito de schema entre notebooks executados na mesma run.
+- **Ignorar arquivos não-fonte no orquestrador:** `00_bronze_orchestrator.py` agora ignora arquivos como `marathon_metadata.csv` que não são fontes de resultados de maratona, em vez de abortar com `ValueError`.
+- **Correção de conflito de nomes PySpark/Python no Gold:** no `03_gold_aggregations.py`, as funções `round`, `sum`, `min` e `max` importadas do PySpark foram renomeadas para `spark_round`, `spark_sum`, `spark_min` e `spark_max`, preservando os built-ins do Python para uso em listas e arredondamento escalares.
+- **Upload automático de container:** o script `upload_raw_data.py` agora cria o container ADLS automaticamente se ele não existir.

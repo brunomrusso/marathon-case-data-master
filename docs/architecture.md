@@ -30,22 +30,41 @@ Solução de Engenharia de Dados na Azure para processar e visualizar dados das 
 - Tabela `silver.marathons_with_weather` enriquece os resultados com condições climáticas do dia da prova (temperatura, precipitação, vento).
 
 ### Gold
-- Gera agregações e métricas para o dashboard.
-- Tabelas otimizadas para leitura, particionadas conforme os filtros do dashboard.
-- Tabelas **externas** armazenadas em `abfss://.../gold/<tabela>`.
+
+Gera agregações e métricas para o dashboard. Tabelas **externas** armazenadas em `abfss://.../gold/<tabela>`.
+
+| Tabela | Finalidade |
+|---|---|
+| `gold.kpi_summary` | KPIs principais por maratona e ano: total de finishers, tempo médio, record da prova e % feminino. Ponto de entrada do dashboard. |
+| `gold.finishers_by_year` | Evolução histórica do número de finishers por maratona ao longo dos anos. |
+| `gold.top_countries` | Ranking dos países com mais finishers por maratona, para análise de diversidade geográfica. |
+| `gold.athletes_by_country` | Contagem de atletas únicos por país e maratona. |
+| `gold.times_distribution` | Distribuição dos tempos de chegada em faixas (ex: < 3h, 3–4h, 4–5h, > 5h) por maratona e ano. |
+| `gold.marathon_comparison` | Comparativo direto entre as quatro maratonas: tempo médio, record, total e % feminino. |
+| `gold.age_gender_profile` | Perfil demográfico dos finishers: contagem e tempo médio por grupo etário e gênero. |
+| `gold.weather_impact` | Correlação entre condições climáticas e desempenho médio. Criada somente quando `silver.marathons_with_weather` estiver disponível. |
+
+### Monitoring
+
+- `monitoring.data_quality_log`: tabela em modo **append** com uma linha por step/notebook/run. Campos: `run_id`, `batch_id`, `layer`, `step`, `source`, `year`, `row_count_in`, `row_count_out`, `rejected_records`, `key_columns_null_pct_json`, `schema_drift_flag`, `execution_time_sec`, `status`, `details`, `recorded_at`.
 
 ## Fluxo de Execução
 
-1. Arquivos CSV são enviados para `raw/` no ADLS via `scripts/upload_raw_data.py` ou outro processo.
-2. O **File Arrival Trigger** detecta a chegada e executa o Databricks Workflow.
-3. `00_bronze_orchestrator` agrupa os CSVs por fonte e executa `01_bronze_ingestion` uma vez por origem. Para London, usa um glob para ler todos os anos de uma só vez.
-4. `01_bronze_ingestion` lê os CSVs, sanitiza colunas, deduplica e grava na camada Bronze.
-5. `02_silver_etl` processa as tabelas Bronze e gera a tabela unificada `silver.marathons`.
+1. Arquivos CSV são enviados para `raw/` via `scripts/upload_raw_data.py` (cria o container se não existir).
+2. O **File Arrival Trigger** detecta a chegada e dispara o Databricks Workflow.
+3. `00_bronze_orchestrator`:
+   - Gera `run_id` (UUID) e `batch_id` (timestamp), propagados via `dbutils.jobs.taskValues`.
+   - Lista os CSVs em `raw/`, **ignora** arquivos não reconhecidos como fontes de resultados (ex: `marathon_metadata.csv`) sem abortar.
+   - Agrupa por fonte e chama `01_bronze_ingestion` uma vez por origem.
+4. `01_bronze_ingestion` lê os CSVs, sanitiza colunas, deduplica por hash de linha e carrega na Bronze via `MERGE`. Registra métricas em `monitoring.data_quality_log` (modo append).
+5. `02_silver_etl` lê as tabelas Bronze, normaliza schemas, aplica mascaramento e grava `silver.marathons`. Registra métricas.
 6. `04_weather_enrichment`:
-   - Gera a tabela `bronze.marathon_metadata` (data, local, coordenadas de cada prova).
-   - Busca o clima histórico na Open-Meteo e armazena em `bronze.weather_raw`.
-   - Cria `silver.marathons_with_weather` juntando resultados e clima.
-7. `03_gold_aggregations` cria as tabelas Gold, incluindo `gold.weather_impact`.
+   - Lê `raw/marathon_metadata.csv` (se existir) para datas exatas; caso contrário usa heurística.
+   - Grava/atualiza `bronze.marathon_metadata` via `MERGE`.
+   - Para cada `(source, year)` sem registro, chama Open-Meteo, persiste JSON bruto em `raw/weather_api/`, parseia e grava em `bronze.weather_raw` via `MERGE`.
+   - Cria `silver.marathons_with_weather` com join por `source + year`.
+   - Registra métricas em `monitoring.data_quality_log`.
+7. `03_gold_aggregations` gera todas as tabelas Gold. Usa `silver.marathons_with_weather` quando disponível; cai para `silver.marathons` caso contrário. Registra métricas.
 8. O dashboard consome as tabelas Gold.
 
 ## Governança e Segurança
@@ -64,11 +83,21 @@ Solução de Engenharia de Dados na Azure para processar e visualizar dados das 
 - Delta Lake com partições por `source` e `year`.
 - Ingestão event-driven: cluster só liga quando arquivos chegam.
 - Ingestão de London otimizada com leitura em lote ao invés de uma chamada por arquivo.
-- **Observabilidade:** tabela `monitoring.data_quality_log` registra por camada:
+- **Observabilidade:** tabela `monitoring.data_quality_log` (append-only, `mergeSchema=true`) registra por step/notebook:
   - `row_count_in` / `row_count_out`
   - `% nulos` em colunas-chave (`key_columns_null_pct_json`)
-  - `rejected_records`
+  - `rejected_records` (inclui arquivos ignorados no orquestrador)
   - `schema_drift_flag`
-  - `execution_time_sec` (identifica gargalos)
-- **Rastreabilidade:** `run_id` e `batch_id` gerados no `00_bronze_orchestrator` e propagados via `dbutils.jobs.taskValues` para Silver, Weather e Gold.
-- **Alertas:** notificações por email em falhas do Databricks Workflow (`ALERT_EMAIL`).
+  - `execution_time_sec` — identifica gargalos por etapa
+- **Rastreabilidade end-to-end:** `run_id` (UUID) e `batch_id` (timestamp) gerados no `00_bronze_orchestrator` e propagados via `dbutils.jobs.taskValues` para todos os notebooks downstream.
+- **Alertas:** notificações por email configuradas no Databricks Workflow para falhas (`ALERT_EMAIL`).
+- **Lineage:** o Unity Catalog captura automaticamente lineage de leitura/escrita. Visualize em **Catalog > Tables > Lineage** nas tabelas Silver e Gold.
+
+## Decisões de Implementação
+
+| Problema | Decisão |
+|---|---|
+| Schema conflict no `monitoring.data_quality_log` | Modo `overwrite` causava `DELTA_SCHEMA_CHANGE_SINCE_ANALYSIS`; migrado para `append` com `mergeSchema=true` |
+| `marathon_metadata.csv` em `raw/` abortava o orquestrador | Arquivos não reconhecidos agora são ignorados com log, sem falha |
+| Conflito `round`/`sum`/`min`/`max` PySpark vs Python em Gold | Funções PySpark renomeadas para `spark_round`, `spark_sum`, `spark_min`, `spark_max`; built-ins Python preservados |
+| Container ADLS ausente após limpeza de storage | `upload_raw_data.py` cria o container automaticamente se não existir |
