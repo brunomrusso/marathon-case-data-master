@@ -47,7 +47,12 @@ if not raw_dir:
     raw_dir = f"abfss://{container}@{storage}.dfs.core.windows.net/raw"
 raw_dir = raw_dir.rstrip("/")
 
-files = [f for f in dbutils.fs.ls(raw_dir) if f.path.endswith(".csv")]
+try:
+    dbutils.fs.mkdirs(raw_dir)
+    files = [f for f in dbutils.fs.ls(raw_dir) if f.path.endswith(".csv")]
+except Exception as e:
+    print(f"Aviso: nao foi possivel listar {raw_dir}: {e}")
+    files = []
 
 # Gera run_id/batch_id para rastrear o fluxo end-to-end
 run_id = str(uuid.uuid4())
@@ -148,6 +153,9 @@ def classify(file_name):
 
 # COMMAND ----------
 
+if not files:
+    raise FileNotFoundError(f"Nenhum arquivo CSV encontrado em {raw_dir}. Suba os arquivos para a pasta raw/ antes de executar.")
+
 # Agrupa arquivos por fonte
 sources = {}
 for f in files:
@@ -186,4 +194,7 @@ log_data_quality(
     details=f"Fontes processadas: {list(sources.keys())}",
 )
 
-print(f"Orquestrador concluído. {len(sources)} fontes processadas.")
+if not sources:
+    raise ValueError(f"Nenhuma fonte reconhecida nos arquivos CSV de {raw_dir}.")
+
+print(f"Orquestrador concluído. {len(sources)} fontes processadas: {list(sources.keys())}")
