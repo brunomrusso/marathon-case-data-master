@@ -17,10 +17,15 @@ import yaml
 from datetime import datetime, timezone
 
 from pyspark.sql import SparkSession
+from builtins import sum as builtins_sum
+
 from pyspark.sql.functions import (
-    col, count, avg, min, max, sum, when, expr
+    col, count, avg, when, expr
 )
 from pyspark.sql.functions import round as spark_round
+from pyspark.sql.functions import sum as spark_sum
+from pyspark.sql.functions import min as spark_min
+from pyspark.sql.functions import max as spark_max
 from pyspark.sql.types import (
     StructType, StructField, StringType, IntegerType, LongType, DoubleType, BooleanType, TimestampType
 )
@@ -157,9 +162,9 @@ kpi_summary = (silver
     .agg(
         count("*").alias("total_athletes"),
         avg("finish_time_sec").alias("avg_finish_time_sec"),
-        min("finish_time_sec").alias("record_time_sec"),
-        sum(when(col("gender") == "F", 1).otherwise(0)).alias("female_count"),
-        sum(when(col("gender") == "M", 1).otherwise(0)).alias("male_count")
+        spark_min("finish_time_sec").alias("record_time_sec"),
+        spark_sum(when(col("gender") == "F", 1).otherwise(0)).alias("female_count"),
+        spark_sum(when(col("gender") == "M", 1).otherwise(0)).alias("male_count")
     )
     .withColumn("female_pct", spark_round(col("female_count") / col("total_athletes") * 100, 2)))
 
@@ -172,8 +177,8 @@ finishers_by_year = (silver
     .groupBy("source", "year", "marathon_name")
     .agg(
         count("*").alias("total_finishers"),
-        sum(when(col("gender") == "F", 1).otherwise(0)).alias("female_finishers"),
-        sum(when(col("gender") == "M", 1).otherwise(0)).alias("male_finishers")
+        spark_sum(when(col("gender") == "F", 1).otherwise(0)).alias("female_finishers"),
+        spark_sum(when(col("gender") == "M", 1).otherwise(0)).alias("male_finishers")
     )
     .withColumn("female_pct", spark_round(col("female_finishers") / col("total_finishers") * 100, 2)))
 
@@ -212,8 +217,8 @@ times_distribution = (silver
     .filter(col("finish_time_sec").isNotNull())
     .groupBy("source", "year", "gender", "age_group")
     .agg(
-        min("finish_time_sec").alias("min"),
-        max("finish_time_sec").alias("max"),
+        spark_min("finish_time_sec").alias("min"),
+        spark_max("finish_time_sec").alias("max"),
         avg("finish_time_sec").alias("mean"),
         expr("percentile_approx(finish_time_sec, 0.5)").alias("median"),
         expr("percentile_approx(finish_time_sec, 0.25)").alias("q1"),
@@ -264,7 +269,7 @@ try:
             .agg(
                 count("*").alias("total_athletes"),
                 avg("finish_time_sec").alias("avg_finish_time_sec"),
-                min("finish_time_sec").alias("record_time_sec")
+                spark_min("finish_time_sec").alias("record_time_sec")
             ))
         save_gold(weather_impact, "weather_impact", ["source", "year"])
         weather_impact_created = True
@@ -297,7 +302,7 @@ log_data_quality(
     layer="gold",
     step="gold_aggregations",
     row_count_in=row_count_in,
-    row_count_out=sum([spark.table(f"gold.{t}").count() for t in existing_gold_tables if t in expected_gold_tables]),
+    row_count_out=builtins_sum([spark.table(f"gold.{t}").count() for t in existing_gold_tables if t in expected_gold_tables]),
     key_columns_null_pct=null_pct,
     schema_drift_flag=schema_drift_flag,
     execution_time_sec=round(execution_time, 2),
