@@ -4,7 +4,11 @@
 # MAGIC # Weather Enrichment
 # MAGIC Enriquece os dados das maratonas com as condições climáticas do dia da prova, usando a API pública Open-Meteo (sem API key).
 # MAGIC
-# MAGIC Fontes: latitude/longitude e data estimada de cada maratona são definidas no notebook. A API retorna temperatura, precipitação e vento para o dia da prova.
+# MAGIC Camadas:
+# MAGIC - Bronze: `bronze.marathon_metadata` (data/local das provas) e `bronze.weather_raw` (dados brutos da API).
+# MAGIC - Silver: `silver.marathons_with_weather` (resultados + clima).
+# MAGIC
+# MAGIC A API retorna temperatura, precipitação e vento para o dia da prova.
 
 # COMMAND ----------
 
@@ -28,7 +32,7 @@ spark.conf.set("spark.sql.ansi.enabled", "false")
 
 catalog_name = dbutils.secrets.get("marathon-scope", "catalog_name")
 spark.sql(f"USE CATALOG {catalog_name}")
-spark.sql("CREATE SCHEMA IF NOT EXISTS weather")
+spark.sql("CREATE SCHEMA IF NOT EXISTS bronze")
 spark.sql("CREATE SCHEMA IF NOT EXISTS silver")
 
 config_yaml = dbutils.secrets.get("marathon-scope", "config_yaml")
@@ -161,38 +165,37 @@ if metadata_df is None:
 
 metadata_df.show()
 
-# Persiste a metadata como tabela referência (merge/upsert por source + year)
-metadata_path = f"abfss://{container}@{storage}.dfs.core.windows.net/weather/marathon_metadata"
+# Persiste a metadata como tabela Bronze (merge/upsert por source + year)
+metadata_path = f"abfss://{container}@{storage}.dfs.core.windows.net/bronze/marathon_metadata"
 
-# Persiste a metadata como tabela referência (merge/upsert por source + year)
 try:
-    spark.table("weather.marathon_metadata")
+    spark.table("bronze.marathon_metadata")
     metadata_df.createOrReplaceTempView("metadata_staging")
     spark.sql("""
-        MERGE INTO weather.marathon_metadata AS target
+        MERGE INTO bronze.marathon_metadata AS target
         USING metadata_staging AS source
         ON target.source = source.source AND target.year = source.year
         WHEN MATCHED THEN UPDATE SET *
         WHEN NOT MATCHED THEN INSERT *
     """)
-    print("Tabela weather.marathon_metadata atualizada via MERGE.")
+    print("Tabela bronze.marathon_metadata atualizada via MERGE.")
 except Exception:
     try:
         dbutils.fs.rm(metadata_path, recurse=True)
     except Exception:
         pass
     metadata_df.write.format("delta").mode("overwrite").option("path", metadata_path).saveAsTable(
-        "weather.marathon_metadata"
+        "bronze.marathon_metadata"
     )
-    print("Tabela weather.marathon_metadata criada.")
+    print("Tabela bronze.marathon_metadata criada.")
 
 # COMMAND ----------
 
-# Tabela cache de clima (idempotente: não re-consulta APIs para datas já buscadas)
-cache_path = f"abfss://{container}@{storage}.dfs.core.windows.net/weather/raw_cache"
+# Tabela cache de clima na Bronze (idempotente: não re-consulta APIs para datas já buscadas)
+cache_path = f"abfss://{container}@{storage}.dfs.core.windows.net/bronze/weather_raw"
 
 try:
-    existing_weather = spark.table("weather.raw_cache")
+    existing_weather = spark.table("bronze.weather_raw")
     existing_keys = existing_weather.select("source", "year", "race_date").distinct()
     metadata_to_fetch = metadata_df.join(existing_keys, ["source", "year", "race_date"], "leftanti")
     print("Usando cache existente; buscando apenas registros novos.")
@@ -273,10 +276,10 @@ if weather_results:
     new_weather_df = spark.createDataFrame(weather_results)
 
     try:
-        spark.table("weather.raw_cache")
+        spark.table("bronze.weather_raw")
         new_weather_df.createOrReplaceTempView("weather_staging")
         spark.sql("""
-            MERGE INTO weather.raw_cache AS target
+            MERGE INTO bronze.weather_raw AS target
             USING weather_staging AS source
             ON target.source = source.source
                AND target.year = source.year
@@ -284,22 +287,22 @@ if weather_results:
             WHEN MATCHED THEN UPDATE SET *
             WHEN NOT MATCHED THEN INSERT *
         """)
-        print("Tabela weather.raw_cache atualizada via MERGE.")
+        print("Tabela bronze.weather_raw atualizada via MERGE.")
     except Exception:
         try:
             dbutils.fs.rm(cache_path, recurse=True)
         except Exception:
             pass
         new_weather_df.write.format("delta").mode("overwrite").option("path", cache_path).saveAsTable(
-            "weather.raw_cache"
+            "bronze.weather_raw"
         )
-        print("Tabela weather.raw_cache criada.")
+        print("Tabela bronze.weather_raw criada.")
 else:
     print("Nenhum dado novo de clima para buscar.")
 
 # COMMAND ----------
 
-weather_df = spark.table("weather.raw_cache")
+weather_df = spark.table("bronze.weather_raw")
 
 weather_cols = [
     "source",

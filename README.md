@@ -219,10 +219,10 @@ O workflow executa em sequência:
 1. **00_bronze_orchestrator** — lê `raw/` do ADLS e ingere os CSVs por fonte na Bronze (uma chamada por fonte; London lido de uma só vez via glob).
 2. **01_bronze_ingestion** — executado internamente pelo orquestrador; lê, limpa e grava cada tabela Bronze.
 3. **02_silver_etl** — gera a tabela `silver.marathons`.
-4. **04_weather_enrichment** — enriquece a Silver com dados climáticos do dia da prova (temperatura, precipitação, vento) via API pública Open-Meteo, gerando `weather.marathon_metadata` e `silver.marathons_with_weather`.
+4. **04_weather_enrichment** — enriquece a Silver com dados climáticos do dia da prova (temperatura, precipitação, vento) via API pública Open-Meteo, gerando `bronze.marathon_metadata`, `bronze.weather_raw` e `silver.marathons_with_weather`.
 5. **03_gold_aggregations** — gera as tabelas `gold.*` para o dashboard, incluindo `gold.weather_impact`.
 
-> **Sobre as datas das provas:** O notebook `04_weather_enrichment` estima a data de cada prova com base em padrões históricos (ex: último domingo de setembro para Berlim). Se quiser datas exatas, crie um arquivo `data/raw/marathon_metadata.csv` com as colunas `source,year,marathon_name,city,country,latitude,longitude,race_date` e suba para o ADLS raw/. O notebook usa esse CSV automaticamente quando ele existe. O exemplo está em `notebooks/marathon_metadata.csv.example`.
+> **Sobre as datas das provas:** O notebook `04_weather_enrichment` gera `bronze.marathon_metadata` estimando a data de cada prova com base em padrões históricos (ex: último domingo de setembro para Berlim). Se quiser datas exatas, crie um arquivo `data/raw/marathon_metadata.csv` com as colunas `source,year,marathon_name,city,country,latitude,longitude,race_date` e suba para o ADLS raw/. O notebook faz MERGE/upsert nessa tabela e usa o CSV automaticamente quando ele existe. O exemplo está em `notebooks/marathon_metadata.csv.example`.
 
 ### 12. Conectar o Dashboard
 
