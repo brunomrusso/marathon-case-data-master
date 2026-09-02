@@ -49,16 +49,25 @@ Solução de Engenharia de Dados na Azure para processar e visualizar dados das 
 
 ## Governança e Segurança
 
-- Todas as tabelas são registradas no **Unity Catalog** (`marathon.bronze.*`, `marathon.silver.*`, `marathon.gold.*`).
+- Todas as tabelas são registradas no **Unity Catalog** (`marathon.bronze.*`, `marathon.silver.*`, `marathon.gold.*`, `marathon.monitoring.*`).
 - Dados sensíveis (nomes e identificadores de atletas) mascarados na Silver via hash SHA-256.
 - Acesso ao ADLS via **Azure Access Connector** e managed identity.
 - Criptografia em trânsito e em repouso do ADLS Gen2.
 - Controle de acesso via RBAC do Azure e permissões do Unity Catalog.
+- **Lineage automático:** o Unity Catalog captura automaticamente o lineage de leitura/escrita entre tabelas e notebooks executados no Databricks. Para visualizar, acesse **Catalog > Tables** e clique em **Lineage** nas tabelas `silver.marathons`, `silver.marathons_with_weather` ou `gold.*`.
 
-## Escalabilidade
+## Escalabilidade e Observabilidade
 
 - ADLS Gen2 para armazenamento distribuído.
 - Databricks auto-scaling para processamento.
 - Delta Lake com partições por `source` e `year`.
 - Ingestão event-driven: cluster só liga quando arquivos chegam.
 - Ingestão de London otimizada com leitura em lote ao invés de uma chamada por arquivo.
+- **Observabilidade:** tabela `monitoring.data_quality_log` registra por camada:
+  - `row_count_in` / `row_count_out`
+  - `% nulos` em colunas-chave (`key_columns_null_pct_json`)
+  - `rejected_records`
+  - `schema_drift_flag`
+  - `execution_time_sec` (identifica gargalos)
+- **Rastreabilidade:** `run_id` e `batch_id` gerados no `00_bronze_orchestrator` e propagados via `dbutils.jobs.taskValues` para Silver, Weather e Gold.
+- **Alertas:** notificações por email em falhas do Databricks Workflow (`ALERT_EMAIL`).

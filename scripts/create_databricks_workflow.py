@@ -78,18 +78,30 @@ def main():
             },
         }
 
+    # Notificações por email em caso de falha (configurável via ALERT_EMAIL)
+    alert_email = os.environ.get("ALERT_EMAIL", "")
+    email_notifications = {}
+    if alert_email:
+        email_notifications = {
+            "on_failure": [alert_email],
+            "on_start": [],
+            "on_success": [],
+        }
+
     if cluster_id:
         for task in tasks:
             task["existing_cluster_id"] = cluster_id
         job = {
             "name": "marathon-case-bronze-silver-gold",
             "trigger": trigger,
+            "email_notifications": email_notifications,
             "tasks": tasks,
         }
     else:
         job = {
             "name": "marathon-case-bronze-silver-gold",
             "trigger": trigger,
+            "email_notifications": email_notifications,
             "job_clusters": [
             {
                 "job_cluster_key": "marathon_cluster",

@@ -13,7 +13,7 @@ Desenvolver uma solução completa de Engenharia de Dados para ingerir, processa
 - **Orquestração:** Databricks Workflows
 - **Ingestão:** File Arrival Trigger no Databricks Workflow
 - **Governança:** Unity Catalog, External Locations e Managed Identities
-- **Observabilidade:** Databricks Job Metrics + tabela `bronze.file_metadata`
+- **Observabilidade:** Databricks Job Metrics + tabela `monitoring.data_quality_log` com contagem in/out, % nulos, rejeitados, schema drift e tempo de execução por camada. Alertas por email no workflow. Lineage automático do Unity Catalog.
 - **Segurança:** Azure Key Vault, RBAC, criptografia, mascaramento e Access Connector
 - **Dashboard:** Power BI ou Streamlit
 
@@ -112,6 +112,7 @@ $env:DATABRICKS_HOST = "https://<id>.azuredatabricks.net"
 $env:DATABRICKS_TOKEN = "dapi..."
 $env:ACCESS_CONNECTOR_ID = "/subscriptions/.../accessConnectors/ac-marathon-case-v2"
 $env:STORAGE_ACCESS_KEY = "SUA_STORAGE_KEY_AQUI"
+$env:ALERT_EMAIL = "seu-email@exemplo.com"   # opcional: notificação de falha no workflow
 ```
 
 O `ACCESS_CONNECTOR_ID` e a `STORAGE_ACCESS_KEY` são exibidos no final do `setup.ps1`.
@@ -199,7 +200,7 @@ python scripts/create_databricks_workflow.py
 
 Substitua `DATABRICKS_REPO_PATH` pelo caminho do repositório importado no Databricks Repos.
 
-O workflow criado já vem com um trigger do tipo **File Arrival** que monitora a pasta `raw/` do ADLS. Sempre que novos arquivos chegarem, o Databricks inicia o cluster, executa Bronze → Silver → Gold e desliga o cluster automaticamente.
+O workflow criado já vem com um trigger do tipo **File Arrival** que monitora a pasta `raw/` do ADLS. Sempre que novos arquivos chegarem, o Databricks inicia o cluster, executa Bronze → Silver → Gold e desliga o cluster automaticamente. Se `ALERT_EMAIL` estiver definido, o workflow envia notificação por email em caso de falha.
 
 Se já tiver um cluster existente, pode usá-lo:
 
@@ -216,12 +217,14 @@ A primeira execução pode ser iniciada manualmente no Databricks em `Workflows 
 Nas próximas vezes, o pipeline dispara sozinho quando novos arquivos chegam na camada `raw`.
 
 O workflow executa em sequência:
-1. **00_bronze_orchestrator** — lê `raw/` do ADLS e ingere os CSVs por fonte na Bronze (uma chamada por fonte; London lido de uma só vez via glob).
-2. **01_bronze_ingestion** — executado internamente pelo orquestrador; lê, limpa e grava cada tabela Bronze.
-3. **02_silver_etl** — gera a tabela `silver.marathons`.
-4. **04_weather_enrichment** — enriquece a Silver com dados climáticos do dia da prova (temperatura, precipitação, vento) via API pública Open-Meteo, gerando `bronze.marathon_metadata`, `bronze.weather_raw` e `silver.marathons_with_weather`.
-5. **03_gold_aggregations** — gera as tabelas `gold.*` para o dashboard, incluindo `gold.weather_impact`.
+1. **00_bronze_orchestrator** — lê `raw/` do ADLS, gera `run_id`/`batch_id` e ingere os CSVs por fonte na Bronze (uma chamada por fonte; London lido de uma só vez via glob).
+2. **01_bronze_ingestion** — executado internamente pelo orquestrador; lê, limpa, deduplica e grava cada tabela Bronze. Loga métricas em `monitoring.data_quality_log`.
+3. **02_silver_etl** — gera a tabela `silver.marathons` e loga qualidade (registros inválidos, % nulos, schema drift).
+4. **04_weather_enrichment** — enriquece a Silver com dados climáticos do dia da prova (temperatura, precipitação, vento) via API pública Open-Meteo, gerando `bronze.marathon_metadata`, `bronze.weather_raw` e `silver.marathons_with_weather`. Também loga API failures e cache.
+5. **03_gold_aggregations** — gera as tabelas `gold.*` para o dashboard, incluindo `gold.weather_impact`, e loga agregações e schema drift.
 
+> **Rastreamento end-to-end:** `run_id` e `batch_id` são gerados no `00_bronze_orchestrator` e propagados via `dbutils.jobs.taskValues` para Silver, Weather e Gold. A tabela `monitoring.data_quality_log` permite rastrear cada execução por camada, incluindo `row_count_in`, `row_count_out`, `rejected_records`, `% nulos`, `schema_drift_flag` e `execution_time_sec`.
+>
 > **Sobre as datas das provas:** O notebook `04_weather_enrichment` gera `bronze.marathon_metadata` estimando a data de cada prova com base em padrões históricos (ex: último domingo de setembro para Berlim). Se quiser datas exatas, crie um arquivo `data/raw/marathon_metadata.csv` com as colunas `source,year,marathon_name,city,country,latitude,longitude,race_date` e suba para o ADLS raw/. O notebook faz MERGE/upsert nessa tabela e usa o CSV automaticamente quando ele existe. O exemplo está em `notebooks/marathon_metadata.csv.example`.
 
 ### 12. Conectar o Dashboard
@@ -269,10 +272,9 @@ marathon-case-data-master/
 
 ## VI. Melhorias e Considerações Finais
 
-- Implementar testes de qualidade automatizados na Silver.
-- Adicionar notificações de falha e alertas no Databricks Workflow.
-- Incluir dados de clima para análise de correlação com performance.
-- Automatizar a ingestão via Azure Data Factory ou Event Grid.
+- Implementar testes de qualidade automatizados na Silver (Great Expectations / Delta Live Tables expectations).
+- Adicionar dashboard de observabilidade com custo/tempo por run a partir de `monitoring.data_quality_log`.
 - Otimizar o particionamento das tabelas Gold conforme os padrões de acesso do dashboard.
 - Expandir as fontes para Boston, Tóquio e outras majors, aproveitando a arquitetura extensível.
 - Buscar datas exatas das provas via API de calendário/esportes para substituir a estimativa heurística usada no `04_weather_enrichment`.
+- Migrar `monitoring.data_quality_log` para append-only com particionamento por `batch_id` para histórico completo de runs.

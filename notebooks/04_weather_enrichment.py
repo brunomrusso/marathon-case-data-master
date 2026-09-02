@@ -8,7 +8,7 @@
 # MAGIC - Bronze: `bronze.marathon_metadata` (data/local das provas) e `bronze.weather_raw` (dados brutos da API).
 # MAGIC - Silver: `silver.marathons_with_weather` (resultados + clima).
 # MAGIC
-# MAGIC A API retorna temperatura, precipitação e vento para o dia da prova.
+# MAGIC A API retorna temperatura, precipitação e vento para o dia da prova. Rastreia run_id/batch_id e loga métricas de qualidade.
 
 # COMMAND ----------
 
@@ -17,13 +17,19 @@
 # COMMAND ----------
 
 import calendar
+import json
 import sys
+import time
+import uuid
 import yaml
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import requests
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, current_timestamp, lit
+from pyspark.sql.types import (
+    StructType, StructField, StringType, IntegerType, LongType, DoubleType, BooleanType, TimestampType
+)
 
 # COMMAND ----------
 
@@ -34,11 +40,99 @@ catalog_name = dbutils.secrets.get("marathon-scope", "catalog_name")
 spark.sql(f"USE CATALOG {catalog_name}")
 spark.sql("CREATE SCHEMA IF NOT EXISTS bronze")
 spark.sql("CREATE SCHEMA IF NOT EXISTS silver")
+spark.sql("CREATE SCHEMA IF NOT EXISTS monitoring")
 
 config_yaml = dbutils.secrets.get("marathon-scope", "config_yaml")
 config = yaml.safe_load(config_yaml)
 storage = config["azure"]["storage_account"]
 container = config["azure"]["container"]
+
+# Recupera run_id/batch_id propagado do orquestrador
+run_id = "manual"
+batch_id = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+try:
+    run_id = dbutils.jobs.taskValues.get(taskKey="bronze_orchestrator", key="run_id", default="manual", debugValue="manual")
+    batch_id = dbutils.jobs.taskValues.get(taskKey="bronze_orchestrator", key="batch_id", default=batch_id, debugValue=batch_id)
+    print(f"run_id={run_id} / batch_id={batch_id} recuperados do orquestrador.")
+except Exception as e:
+    print(f"taskValues indisponível (execução manual?): {e}")
+
+start_time = time.time()
+
+# COMMAND ----------
+
+
+def log_data_quality(
+    layer,
+    step,
+    source=None,
+    year=None,
+    row_count_in=None,
+    row_count_out=None,
+    rejected_records=None,
+    key_columns_null_pct=None,
+    schema_drift_flag=None,
+    execution_time_sec=None,
+    status="PASS",
+    details=None,
+):
+    monitoring_path = f"abfss://{container}@{storage}.dfs.core.windows.net/monitoring/data_quality_log"
+    null_pct_json = json.dumps(key_columns_null_pct) if key_columns_null_pct else None
+
+    schema = StructType(
+        [
+            StructField("run_id", StringType(), False),
+            StructField("batch_id", StringType(), False),
+            StructField("layer", StringType(), False),
+            StructField("step", StringType(), False),
+            StructField("source", StringType(), True),
+            StructField("year", IntegerType(), True),
+            StructField("row_count_in", LongType(), True),
+            StructField("row_count_out", LongType(), True),
+            StructField("rejected_records", LongType(), True),
+            StructField("key_columns_null_pct_json", StringType(), True),
+            StructField("schema_drift_flag", BooleanType(), True),
+            StructField("execution_time_sec", DoubleType(), True),
+            StructField("status", StringType(), True),
+            StructField("details", StringType(), True),
+            StructField("recorded_at", TimestampType(), False),
+        ]
+    )
+
+    row = [(
+        run_id,
+        batch_id,
+        layer,
+        step,
+        source,
+        int(year) if year is not None else None,
+        row_count_in,
+        row_count_out,
+        rejected_records,
+        null_pct_json,
+        schema_drift_flag,
+        execution_time_sec,
+        status,
+        details,
+        datetime.now(timezone.utc),
+    )]
+    df = spark.createDataFrame(row, schema=schema)
+
+    try:
+        existing = spark.table("monitoring.data_quality_log")
+        combined = existing.unionByName(df, allowMissingColumns=False)
+    except Exception:
+        combined = df
+
+    try:
+        dbutils.fs.rm(monitoring_path, recurse=True)
+    except Exception:
+        pass
+
+    combined.write.format("delta").mode("overwrite").option("path", monitoring_path).saveAsTable(
+        "monitoring.data_quality_log"
+    )
+
 
 # COMMAND ----------
 
@@ -164,6 +258,7 @@ if metadata_df is None:
     print(f"Metadata gerada via heurística para {metadata_rows.__len__()} combinações source/ano.")
 
 metadata_df.show()
+metadata_count_in = metadata_df.count()
 
 # Persiste a metadata como tabela Bronze (merge/upsert por source + year)
 metadata_path = f"abfss://{container}@{storage}.dfs.core.windows.net/bronze/marathon_metadata"
@@ -207,6 +302,7 @@ except Exception:
 
 # Busca na Open-Meteo Archive API
 
+
 def fetch_weather(latitude, longitude, race_date):
     url = "https://archive-api.open-meteo.com/v1/archive"
     params = {
@@ -242,13 +338,16 @@ def fetch_weather(latitude, longitude, race_date):
 
 fetch_rows = metadata_to_fetch.toPandas()
 weather_results = []
+api_failures = 0
 
 for _, row in fetch_rows.iterrows():
     race_date = row["race_date"]
     if not race_date:
+        api_failures += 1
         continue
     weather = fetch_weather(row["latitude"], row["longitude"], race_date)
     if weather is None:
+        api_failures += 1
         continue
     weather_results.append(
         {
@@ -266,11 +365,13 @@ for _, row in fetch_rows.iterrows():
         }
     )
 
-print(f"{len(weather_results)} registros de clima obtidos.")
+print(f"{len(weather_results)} registros de clima obtidos; {api_failures} falhas.")
 
 # COMMAND ----------
 
 # Grava cache de clima (merge/upsert por source + year + race_date)
+
+weather_count_out = len(weather_results)
 
 if weather_results:
     new_weather_df = spark.createDataFrame(weather_results)
@@ -322,6 +423,8 @@ silver_with_weather = silver_df.join(
     how="left",
 )
 
+silver_with_weather_count = silver_with_weather.count()
+
 silver_with_weather_path = (
     f"abfss://{container}@{storage}.dfs.core.windows.net/silver/marathons_with_weather"
 )
@@ -336,5 +439,31 @@ silver_with_weather.write.format("delta").mode("overwrite").option(
 ).saveAsTable("silver.marathons_with_weather")
 
 print("Tabela silver.marathons_with_weather criada/atualizada.")
+
+# COMMAND ----------
+
+# % de nulos em colunas de clima para detectar falhas de enriquecimento
+weather_key_cols = ["temperature_max_c", "temperature_mean_c", "precipitation_mm", "windspeed_max_kmh"]
+weather_null_pct = {}
+for c in weather_key_cols:
+    if c in silver_with_weather.columns:
+        total = silver_with_weather_count
+        null_count = silver_with_weather.filter(col(c).isNull()).count() if total > 0 else 0
+        weather_null_pct[c] = round(null_count / total * 100, 2) if total > 0 else 0.0
+
+execution_time = time.time() - start_time
+
+log_data_quality(
+    layer="weather",
+    step="weather_enrichment",
+    row_count_in=metadata_count_in,
+    row_count_out=weather_count_out,
+    rejected_records=api_failures,
+    key_columns_null_pct=weather_null_pct,
+    schema_drift_flag=False,
+    execution_time_sec=round(execution_time, 2),
+    status="WARN" if api_failures > 0 else "PASS",
+    details=f"Silver rows enriquecidos: {silver_with_weather_count}; weather_null_pct: {weather_null_pct}",
+)
 
 # COMMAND ----------
