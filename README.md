@@ -69,7 +69,10 @@ Antes de começar, você precisa de:
 - Uma **conta Microsoft Azure** ativa com crédito ou faturamento habilitado.
 - Permissões para criar Resource Groups, Storage Accounts e Databricks Workspaces.
 - **Python 3.10+** instalado localmente.
+- **Azure CLI** instalado e logado (`az login`).
 - Acesso aos datasets listados acima.
+- **Workspace Admin no Databricks** (necessário para criar Storage Credentials, External Locations e Catalogs no Unity Catalog).
+- **Metastore do Unity Catalog anexado ao workspace** (passo único no Account Console; o script detecta e orienta se estiver faltando).
 
 ### 2. Clonar e preparar o ambiente
 
@@ -130,11 +133,12 @@ Esse script orquestra todo o resto:
 3. Atualiza `config/config.yaml` com os recursos criados
 4. Descobre storage access key e URL do Databricks
 5. Solicita o **Databricks Personal Access Token** (com instrucoes na tela)
-6. Configura Unity Catalog (storage credential, external location, catalog)
-7. Salva secrets no Databricks
-8. Registra EventGrid provider e atribui roles ao Access Connector
-9. Sobe os CSVs para `raw/`
-10. Cria o workflow com File Arrival Trigger
+6. Valida o token testando a API do Unity Catalog
+7. Configura Unity Catalog (storage credential, external location, catalog) ou detecta se ja existem
+8. Salva secrets no Databricks
+9. Registra EventGrid provider e atribui roles ao Access Connector
+10. Sobe os CSVs para `raw/`
+11. Cria o workflow com File Arrival Trigger
 
 Se falhar em qualquer passo, basta corrigir o problema e rodar novamente:
 
@@ -267,6 +271,8 @@ marathon-case-data-master/
 - **Setup unificado:** novo `scripts/setup_all.py` executa todo o provisionamento e configuracao em um unico comando, com persistencia de estado para retomada.
 - **Arquivo `.env`:** centraliza configuracoes de ambiente (Databricks token, email de alerta, repo path).
 - **Versao Python do enable_file_events:** nao depende mais exclusivamente do PowerShell.
+- **Validacao de token aprimorada:** testa o token direto na API do Unity Catalog, evitando falso positivo.
+- **Deteccao de recursos existentes:** storage credential, external location e catalog sao verificados antes de tentar criar, reduzindo erros desnecessarios.
 
 ### [2025] — Ajustes de execução e correções de pipeline
 

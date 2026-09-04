@@ -361,12 +361,20 @@ def step_databricks_token(state):
         os.environ["DATABRICKS_TOKEN"] = token
         update_env_file(["DATABRICKS_TOKEN"])
 
-    # Testa o token
-    print_info("Validando token...")
-    resp = requests_get(f"{host}/api/2.0/token/get", token)
-    if resp.status_code not in (200, 403):  # 403 pode ser valido para token pessoal em alguns workspaces
-        raise RuntimeError(f"Token invalido ou workspace inacessivel: {resp.status_code}")
-    print_ok("Token validado")
+    # Testa o token com a API real que sera usada no Unity Catalog
+    print_info("Validando token com a API do Unity Catalog...")
+    resp = requests_get(f"{host}/api/2.1/unity-catalog/storage-credentials", token)
+    if resp.status_code == 200:
+        print_ok("Token validado — acesso ao Unity Catalog confirmado")
+    elif resp.status_code == 403:
+        print_error("Token valido, mas sem permissao para a API do Unity Catalog.")
+        print_info("Verifique:")
+        print_info("  - O token foi gerado no workspace correto: {host}")
+        print_info("  - O usuario tem Workspace Admin ou Metastore Admin")
+        print_info("  - O workspace tem um metastore do Unity Catalog anexado")
+        raise RuntimeError("Token sem permissao para Unity Catalog")
+    else:
+        raise RuntimeError(f"Token invalido ou workspace inacessivel: {resp.status_code} - {resp.text}")
 
     mark_completed(state, "databricks_token")
 
@@ -381,7 +389,28 @@ def requests_post(url, token, json_data):
     return requests.post(url, headers={"Authorization": f"Bearer {token}"}, json=json_data, timeout=30)
 
 
-def step_unity_catalog(state):
+def check_unity_catalog_access(host, token):
+    """Verifica se o token tem permissao para gerenciar storage credentials."""
+    print_info("Verificando acesso ao Unity Catalog...")
+    resp = requests_get(f"{host}/api/2.1/unity-catalog/storage-credentials", token)
+    if resp.status_code == 200:
+        return True, None
+    if resp.status_code == 403:
+        return False, "Token valido, mas sem permissao para Unity Catalog (Workspace Admin ou Metastore Admin necessario)."
+    return False, f"Workspace nao respondeu como esperado: {resp.status_code} - {resp.text}"
+
+
+def resource_exists(url, token, name):
+    """Verifica se um recurso do Unity Catalog ja existe."""
+    resp = requests_get(url, token)
+    if resp.status_code != 200:
+        return False
+    data = resp.json()
+    items = data.get("storage_credentials") or data.get("external_locations") or data.get("catalogs") or []
+    return any(item.get("name") == name for item in items)
+
+
+def step_unity_catalog(state, skip_manual=False):
     print_step(STEPS.index("unity_catalog") + 1, "Configurando Unity Catalog")
 
     host = os.environ["DATABRICKS_HOST"].rstrip("/")
@@ -393,52 +422,84 @@ def step_unity_catalog(state):
     container = config["azure"]["container"]
     external_url = f"abfss://{container}@{storage}.dfs.core.windows.net/"
 
+    ok, msg = check_unity_catalog_access(host, token)
+    if not ok:
+        print_error(msg)
+        print_info("")
+        print_info("UNICA ACAO NECESSARIA: anexar um Metastore do Unity Catalog ao workspace.")
+        print_info("1. Acesse https://accounts.azuredatabricks.net (Account Console)")
+        print_info("2. Va em Data > Metastores")
+        print_info("3. Crie um metastore na regiao eastus")
+        print_info("4. Anexe o workspace dbw-marathon-case")
+        print_info("5. Rode novamente: python scripts/setup_all.py")
+        print_info("")
+        print_info("Alternativamente, crie na UI do workspace:")
+        print_info(f"  - Storage Credential: marathon-storage-credential (Azure Managed Identity: {access_connector_id})")
+        print_info(f"  - External Location: marathon-external-location -> {external_url}")
+        print_info(f"  - Catalog: marathon com storage_root em {external_url}catalogs/marathon/")
+        if skip_manual:
+            raise RuntimeError("Unity Catalog nao acessivel")
+        resposta = input("  Deseja pular este passo e configura-lo manualmente? (s/n): ").strip().lower()
+        if resposta in ("s", "sim", "yes", "y"):
+            print_warn("Pulando Unity Catalog. Configure manualmente os recursos acima.")
+            raise RuntimeError("Unity Catalog configurado manualmente — reinicie o setup")
+        raise RuntimeError("Unity Catalog nao acessivel")
+
     # Storage credential
     cred_name = "marathon-storage-credential"
-    resp = requests_post(
-        f"{host}/api/2.1/unity-catalog/storage-credentials",
-        token,
-        {
-            "name": cred_name,
-            "azure_managed_identity": {"access_connector_id": access_connector_id},
-            "comment": "Credencial para acesso ao ADLS do case marathon",
-        },
-    )
-    if resp.status_code == 200:
-        print_ok(f"Storage credential '{cred_name}' criada")
-    elif resp.status_code == 409 or "already exists" in resp.text.lower():
-        print_ok(f"Storage credential '{cred_name}' ja existia")
+    if resource_exists(f"{host}/api/2.1/unity-catalog/storage-credentials", token, cred_name):
+        print_ok(f"Storage credential '{cred_name}' ja existe")
     else:
-        raise RuntimeError(f"Erro ao criar storage credential: {resp.status_code} - {resp.text}")
+        resp = requests_post(
+            f"{host}/api/2.1/unity-catalog/storage-credentials",
+            token,
+            {
+                "name": cred_name,
+                "azure_managed_identity": {"access_connector_id": access_connector_id},
+                "comment": "Credencial para acesso ao ADLS do case marathon",
+            },
+        )
+        if resp.status_code == 200:
+            print_ok(f"Storage credential '{cred_name}' criada")
+        elif resp.status_code == 409 or "already exists" in resp.text.lower():
+            print_ok(f"Storage credential '{cred_name}' ja existia")
+        else:
+            raise RuntimeError(f"Erro ao criar storage credential: {resp.status_code} - {resp.text}")
 
     # External location
     loc_name = "marathon-external-location"
-    resp = requests_post(
-        f"{host}/api/2.1/unity-catalog/external-locations",
-        token,
-        {"name": loc_name, "url": external_url, "credential_name": cred_name, "comment": "External location para o data lake do case marathon"},
-    )
-    if resp.status_code == 200:
-        print_ok(f"External location '{loc_name}' criada: {external_url}")
-    elif resp.status_code == 409 or "already exists" in resp.text.lower():
-        print_ok(f"External location '{loc_name}' ja existia")
+    if resource_exists(f"{host}/api/2.1/unity-catalog/external-locations", token, loc_name):
+        print_ok(f"External location '{loc_name}' ja existe")
     else:
-        raise RuntimeError(f"Erro ao criar external location: {resp.status_code} - {resp.text}")
+        resp = requests_post(
+            f"{host}/api/2.1/unity-catalog/external-locations",
+            token,
+            {"name": loc_name, "url": external_url, "credential_name": cred_name, "comment": "External location para o data lake do case marathon"},
+        )
+        if resp.status_code == 200:
+            print_ok(f"External location '{loc_name}' criada: {external_url}")
+        elif resp.status_code == 409 or "already exists" in resp.text.lower():
+            print_ok(f"External location '{loc_name}' ja existia")
+        else:
+            raise RuntimeError(f"Erro ao criar external location: {resp.status_code} - {resp.text}")
 
     # Catalog
     catalog_name = "marathon"
-    storage_root = f"{external_url}catalogs/{catalog_name}/"
-    resp = requests_post(
-        f"{host}/api/2.1/unity-catalog/catalogs",
-        token,
-        {"name": catalog_name, "storage_root": storage_root, "comment": "Catalog do case marathon"},
-    )
-    if resp.status_code == 200:
-        print_ok(f"Catalog '{catalog_name}' criado")
-    elif resp.status_code == 409 or "already exists" in resp.text.lower():
-        print_ok(f"Catalog '{catalog_name}' ja existia")
+    if resource_exists(f"{host}/api/2.1/unity-catalog/catalogs", token, catalog_name):
+        print_ok(f"Catalog '{catalog_name}' ja existe")
     else:
-        raise RuntimeError(f"Erro ao criar catalog: {resp.status_code} - {resp.text}")
+        storage_root = f"{external_url}catalogs/{catalog_name}/"
+        resp = requests_post(
+            f"{host}/api/2.1/unity-catalog/catalogs",
+            token,
+            {"name": catalog_name, "storage_root": storage_root, "comment": "Catalog do case marathon"},
+        )
+        if resp.status_code == 200:
+            print_ok(f"Catalog '{catalog_name}' criado")
+        elif resp.status_code == 409 or "already exists" in resp.text.lower():
+            print_ok(f"Catalog '{catalog_name}' ja existia")
+        else:
+            raise RuntimeError(f"Erro ao criar catalog: {resp.status_code} - {resp.text}")
 
     # Secret catalog_name
     resp = requests_post(
@@ -597,14 +658,17 @@ def step_create_workflow(state):
     mark_completed(state, "create_workflow")
 
 
-def run_step(state, step_name):
+def run_step(state, step_name, skip_manual=False):
     if is_completed(state, step_name):
         print_step(STEPS.index(step_name) + 1, f"Pulando '{step_name}' (ja concluido)")
         return
 
     step_func = globals()[f"step_{step_name}"]
     try:
-        step_func(state)
+        if step_name == "unity_catalog":
+            step_func(state, skip_manual=skip_manual)
+        else:
+            step_func(state)
     except Exception as e:
         print_error(f"Falha no passo '{step_name}': {e}")
         print_info("Corrija o problema e rode novamente 'python scripts/setup_all.py' para retomar.")
@@ -614,6 +678,7 @@ def run_step(state, step_name):
 def main():
     parser = argparse.ArgumentParser(description="Setup unificado do projeto marathon-case-data-master")
     parser.add_argument("--reset", action="store_true", help="Apaga o estado e reinicia do zero")
+    parser.add_argument("--skip-unity-catalog", action="store_true", help="Pula configuracao do Unity Catalog (configurar manualmente)")
     args = parser.parse_args()
 
     state = load_state()
@@ -627,7 +692,7 @@ def main():
     print(_color("=" * 60, "cyan"))
 
     for step in STEPS:
-        run_step(state, step)
+        run_step(state, step, skip_manual=args.skip_unity_catalog)
 
     print("\n" + _color("=" * 60, "green"))
     print(_color(" Setup concluido com sucesso! ", "green"))
