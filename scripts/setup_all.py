@@ -113,7 +113,7 @@ def find_az_cli():
 
 
 def run_command(cmd, capture=True, check=True, shell=False):
-    """Executa comando no shell. Retorna stdout."""
+    """Executa comando no shell. Retorna stdout se capture=True, senao retorna string vazia."""
     print_info(f"Executando: {' '.join(cmd) if isinstance(cmd, list) else cmd}")
 
     if isinstance(cmd, list) and cmd[0] in ("az", "az.cmd"):
@@ -129,7 +129,9 @@ def run_command(cmd, capture=True, check=True, shell=False):
     result = subprocess.run(cmd, **kwargs)
     if check and result.returncode != 0:
         raise RuntimeError(f"Comando falhou (rc={result.returncode}): {result.stderr or result.stdout}")
-    return result.stdout.strip()
+    if capture and result.stdout:
+        return result.stdout.strip()
+    return ""
 
 
 def prompt(msg, required=True, secret=False):
