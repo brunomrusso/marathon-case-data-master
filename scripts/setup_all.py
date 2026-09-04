@@ -323,41 +323,54 @@ def get_aad_token_for_databricks():
 
 
 def step_account_id(state):
-    print_step(STEPS.index("account_id") + 1, "Obtendo Databricks Account ID")
+    print_step(STEPS.index("account_id") + 1, "Verificando Unity Catalog")
 
-    account_id = os.environ.get("DATABRICKS_ACCOUNT_ID")
-    if account_id:
-        print_ok(f"Account ID do .env: {account_id}")
-        state["outputs"]["databricks_account_id"] = account_id
+    host = os.environ["DATABRICKS_HOST"].rstrip("/")
+    token = get_aad_token_for_databricks()
+    workspace_id = state["outputs"].get("workspace_id")
+
+    os.environ["DATABRICKS_TOKEN"] = token
+    update_env_file(["DATABRICKS_TOKEN"])
+
+    print_info("Verificando se Unity Catalog ja esta ativado...")
+    resp = requests.get(
+        f"{host}/api/2.1/unity-catalog/workspaces/{workspace_id}/metastore",
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=30,
+    )
+    if resp.status_code == 200:
+        print_ok("Unity Catalog ja ativado. Account ID nao necessario.")
+        state["outputs"]["unity_catalog_ready"] = True
         save_state(state)
         mark_completed(state, "account_id")
         return
 
-    host = os.environ["DATABRICKS_HOST"].rstrip("/")
-    workspace_url = state["outputs"].get("databricks_workspace_url")
+    print_warn("Unity Catalog nao ativado. Precisamos do Account ID.")
+    account_id = os.environ.get("DATABRICKS_ACCOUNT_ID")
+    if not account_id:
+        print_info("")
+        print_info("=" * 60)
+        print_info("ACAO MANUAL NECESSARIA: obter o Databricks Account ID")
+        print_info("=" * 60)
+        print_info("Passos:")
+        print_info(f"  1. Abra o workspace: {host}")
+        print_info("  2. Clique no icone do usuario (canto superior direito)")
+        print_info("  3. Selecione 'Manage Account' ou 'Account Console'")
+        print_info("  4. A URL do navegador tera o formato:")
+        print_info("     https://accounts.azuredatabricks.net/?account_id=XXXXXXXX")
+        print_info("  5. Copie o numero XXXXXXXX")
+        print_info("=" * 60)
 
-    print_info("")
-    print_info("=" * 60)
-    print_info("ACAO MANUAL NECESSARIA: obter o Databricks Account ID")
-    print_info("=" * 60)
-    print_info("Passos:")
-    print_info(f"  1. Abra o workspace: {host}")
-    print_info("  2. Clique no icone do usuario (canto superior direito)")
-    print_info("  3. Selecione 'Manage Account' ou 'Account Console'")
-    print_info("  4. A URL do navegador tera o formato:")
-    print_info("     https://accounts.azuredatabricks.net/?account_id=XXXXXXXX")
-    print_info("  5. Copie o numero XXXXXXXX")
-    print_info("=" * 60)
+        try:
+            webbrowser.open(host)
+            print_info("Workspace aberto no navegador.")
+        except Exception:
+            pass
 
-    try:
-        webbrowser.open(host)
-        print_info("Workspace aberto no navegador.")
-    except Exception:
-        pass
+        account_id = prompt("Cole o Databricks Account ID")
+        os.environ["DATABRICKS_ACCOUNT_ID"] = account_id
+        update_env_file(["DATABRICKS_ACCOUNT_ID"])
 
-    account_id = prompt("Cole o Databricks Account ID")
-    os.environ["DATABRICKS_ACCOUNT_ID"] = account_id
-    update_env_file(["DATABRICKS_ACCOUNT_ID"])
     state["outputs"]["databricks_account_id"] = account_id
     save_state(state)
     print_ok(f"Account ID: {account_id}")
@@ -367,11 +380,12 @@ def step_account_id(state):
 def step_unity_catalog(state):
     print_step(STEPS.index("unity_catalog") + 1, "Configurando Unity Catalog")
 
-    print_info("Gerando Azure AD token para API do Databricks...")
-    token = get_aad_token_for_databricks()
-    os.environ["DATABRICKS_TOKEN"] = token
-    update_env_file(["DATABRICKS_TOKEN"])
-    print_ok("Azure AD token obtido")
+    if not os.environ.get("DATABRICKS_TOKEN"):
+        print_info("Gerando Azure AD token para API do Databricks...")
+        token = get_aad_token_for_databricks()
+        os.environ["DATABRICKS_TOKEN"] = token
+        update_env_file(["DATABRICKS_TOKEN"])
+        print_ok("Azure AD token obtido")
 
     script = PROJECT_ROOT / "scripts" / "setup_unity_catalog.py"
     if not script.exists():

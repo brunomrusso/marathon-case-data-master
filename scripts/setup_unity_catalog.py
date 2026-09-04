@@ -168,8 +168,8 @@ def main():
     workspace_id = os.environ.get("DATABRICKS_WORKSPACE_ID")
     access_connector_id = os.environ.get("ACCESS_CONNECTOR_ID")
 
-    if not all([account_id, host, token, workspace_id, access_connector_id]):
-        print("Variaveis obrigatorias: DATABRICKS_ACCOUNT_ID, DATABRICKS_HOST, DATABRICKS_TOKEN, DATABRICKS_WORKSPACE_ID, ACCESS_CONNECTOR_ID")
+    if not all([host, token, workspace_id, access_connector_id]):
+        print("Variaveis obrigatorias: DATABRICKS_HOST, DATABRICKS_TOKEN, DATABRICKS_WORKSPACE_ID, ACCESS_CONNECTOR_ID")
         sys.exit(1)
 
     workspace_id = int(workspace_id)
@@ -181,13 +181,19 @@ def main():
     external_url = f"abfss://{container}@{storage}.dfs.core.windows.net/"
 
     # Verifica se workspace ja tem metastore atribuido
-    print("Verificando metastore atual do workspace...")
+    print("Verificando se Unity Catalog esta ativado no workspace...")
     resp = workspace_api("GET", host, token, f"/api/2.1/unity-catalog/workspaces/{workspace_id}/metastore")
     if resp.status_code == 200:
         current = resp.json()
-        print(f"Workspace ja atribuido ao metastore: {current.get('metastore_id')}")
+        print(f"Unity Catalog ativado. Metastore: {current.get('metastore_id')}")
     else:
-        print("Workspace sem metastore atribuido. Criando/escolhendo metastore...")
+        print(f"Unity Catalog NAO ativado (status {resp.status_code}).")
+        if not account_id:
+            print("Requer DATABRICKS_ACCOUNT_ID para criar/atribuir metastore.")
+            print("Abra o workspace, clique no icone do usuario > Manage Account/Account Console e copie o account_id da URL.")
+            sys.exit(1)
+
+        print("Criando/escolhendo metastore...")
         metastores = list_metastores(account_id, token)
         if metastores:
             print(f"Metastores existentes na regiao {region}:")
