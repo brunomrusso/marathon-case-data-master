@@ -333,11 +333,13 @@ def step_account_id(state):
     update_env_file(["DATABRICKS_TOKEN"])
 
     print_info("Verificando se Unity Catalog ja esta ativado...")
+    print_info(f"Workspace ID usado: {workspace_id}")
     resp = requests.get(
         f"{host}/api/2.1/unity-catalog/workspaces/{workspace_id}/metastore",
         headers={"Authorization": f"Bearer {token}"},
         timeout=30,
     )
+    print_info(f"Resposta: {resp.status_code} - {resp.text[:200]}")
     if resp.status_code == 200:
         print_ok("Unity Catalog ja ativado. Account ID nao necessario.")
         state["outputs"]["unity_catalog_ready"] = True

@@ -35,5 +35,5 @@ output "access_connector_principal_id" {
 }
 
 output "workspace_id" {
-  value = substr(azurerm_databricks_workspace.this.workspace_id, 2, -1)
+  value = azurerm_databricks_workspace.this.workspace_id
 }

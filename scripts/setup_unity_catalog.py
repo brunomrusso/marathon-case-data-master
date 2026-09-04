@@ -181,8 +181,9 @@ def main():
     external_url = f"abfss://{container}@{storage}.dfs.core.windows.net/"
 
     # Verifica se workspace ja tem metastore atribuido
-    print("Verificando se Unity Catalog esta ativado no workspace...")
+    print(f"Verificando se Unity Catalog esta ativado no workspace {workspace_id}...")
     resp = workspace_api("GET", host, token, f"/api/2.1/unity-catalog/workspaces/{workspace_id}/metastore")
+    print(f"Resposta: {resp.status_code} - {resp.text[:200]}")
     if resp.status_code == 200:
         current = resp.json()
         print(f"Unity Catalog ativado. Metastore: {current.get('metastore_id')}")
