@@ -99,19 +99,56 @@ pip install -r requirements.txt
 python scripts/inspect_raw_data.py
 ```
 
-### 5. Provisionar a infraestrutura Azure
+### 5. Setup unificado (recomendado)
 
-No PowerShell:
+Crie o arquivo `.env` a partir do exemplo:
 
 ```powershell
-.\scripts\setup.ps1
+cp .env.example .env
 ```
 
-O script vai:
-- Instalar o **Azure CLI**, se necessário.
-- Fazer login no Azure.
-- Criar o Resource Group, Storage Account (ADLS Gen2), Container `marathon-data`, Databricks Workspace, Access Connector e Key Vault.
-- Exibir o **Storage Account**, a **Storage Access Key** e o **Access Connector ID**.
+Edite o `.env` e preencha pelo menos:
+
+```env
+DATABRICKS_TOKEN=                                    # sera solicitado durante o setup
+ALERT_EMAIL=seu-email@exemplo.com                    # opcional
+DATABRICKS_REPO_PATH=/Workspace/Repos/<usuario>/marathon-case-data-master
+```
+
+> O token do Databricks so pode ser gerado apos o deploy do workspace, entao deixe `DATABRICKS_TOKEN` em branco; o script vai pedir no momento certo.
+
+Execute o setup unico:
+
+```powershell
+python scripts/setup_all.py
+```
+
+Esse script orquestra todo o resto:
+
+1. Checa prerequisitos (Python, Azure CLI, login)
+2. Faz deploy do Bicep
+3. Atualiza `config/config.yaml` com os recursos criados
+4. Descobre storage access key e URL do Databricks
+5. Solicita o **Databricks Personal Access Token** (com instrucoes na tela)
+6. Configura Unity Catalog (storage credential, external location, catalog)
+7. Salva secrets no Databricks
+8. Registra EventGrid provider e atribui roles ao Access Connector
+9. Sobe os CSVs para `raw/`
+10. Cria o workflow com File Arrival Trigger
+
+Se falhar em qualquer passo, basta corrigir o problema e rodar novamente:
+
+```powershell
+python scripts/setup_all.py
+```
+
+O script retoma de onde parou, pois salva o progresso em `.setup_state.json`.
+
+Para recomecar do zero:
+
+```powershell
+python scripts/setup_all.py --reset
+```
 
 > **Atenção MFA:** se o `az login` falhar por exigência de autenticação multifator, use:
 >
@@ -119,120 +156,28 @@ O script vai:
 > az login --tenant <SEU_TENANT_ID>
 > ```
 
-### 6. Configurar o Databricks Workspace
+### 6. Executar o Workflow
 
-1. Acesse a URL do Databricks Workspace exibida no passo anterior.
-2. Gere um **Personal Access Token** em `User Settings > Access tokens`.
-3. Defina as variáveis de ambiente:
+A primeira execução pode ser iniciada manualmente no Databricks em `Workflows > Jobs`, selecionando `marathon-case-bronze-silver-gold` e clicando em **Run Now**.
 
-```powershell
-$env:DATABRICKS_HOST = "https://<id>.azuredatabricks.net"
-$env:DATABRICKS_TOKEN = "dapi..."
-$env:ACCESS_CONNECTOR_ID = "/subscriptions/.../accessConnectors/ac-marathon-case-v2"
-$env:STORAGE_ACCESS_KEY = "SUA_STORAGE_KEY_AQUI"
-$env:ALERT_EMAIL = "seu-email@exemplo.com"   # opcional: notificação de falha no workflow
-```
-
-O `ACCESS_CONNECTOR_ID` e a `STORAGE_ACCESS_KEY` são exibidos no final do `setup.ps1`.
-
-### 7. Criar o catálogo e external location no Unity Catalog
-
-```powershell
-python scripts/setup_unity_catalog.py
-```
-
-Esse script:
-- Cria um **Storage Credential** usando o Access Connector.
-- Cria um **External Location** apontando para `abfss://marathon-data@<storage>.dfs.core.windows.net/`.
-- Cria o catálogo `marathon` com managed storage.
-- Salva o segredo `catalog_name` no scope `marathon-scope`.
-
-> Importante: execute este passo **antes** de criar os outros segredos, pois os notebooks dependem do catálogo `marathon`.
-
-### 7.1. Habilitar file events para o File Arrival Trigger
-
-O File Arrival Trigger do Databricks usa **managed file events** do Azure (EventGrid + Storage Queue). Isso requer alguns passos obrigatórios:
-
-**a) Registrar o provider Microsoft.EventGrid na subscription:**
-
-```powershell
-az provider register --namespace Microsoft.EventGrid --subscription <SUBSCRIPTION_ID>
-```
-
-Aguarde 2-5 min e verifique:
-
-```powershell
-az provider show --namespace Microsoft.EventGrid --subscription <SUBSCRIPTION_ID> --query registrationState -o tsv
-```
-
-Deve retornar `Registered`.
-
-**b) Atribuir as roles necessárias ao managed identity do Access Connector:**
-
-```powershell
-.\scripts\enable_file_events.ps1
-```
-
-O script atribui ao managed identity do Access Connector:
-- `Storage Blob Data Contributor`
-- `Storage Queue Data Contributor`
-- `Storage Account Contributor`
-- `EventGrid EventSubscription Contributor`
-
-Para verificar (use o `principalId` exibido pelo script):
-
-```powershell
-az role assignment list --assignee-object-id <PRINCIPAL_ID> --all --output table
-```
-
-Você deve ver as 4 roles atribuídas.
+Nas próximas vezes, o pipeline dispara sozinho quando novos arquivos chegam na camada `raw`.
 
 > **Importante:** O Databricks provisiona automaticamente um EventGrid System Topic no storage account na primeira execução do trigger. Isso é esperado e indica que o File Arrival está funcionando. O status do trigger deve mudar de `failed` para `no run triggered` (aguardando novos arquivos) após o provisionamento.
 >
 > Se o trigger continuar falhando por mais de 30 min após os passos acima, pause e despausa o trigger em **Workflows > Jobs > marathon-case-bronze-silver-gold > Triggers** para forçar um retry limpo.
 
-### 8. Salvar o segredo do config.yaml no Databricks
+---
 
-```powershell
-python scripts/setup_databricks_secrets.py
-```
+### Setup manual (alternativa)
 
-Esse script cria o **Secret Scope** `marathon-scope` e salva o conteúdo do arquivo `config/config.yaml` com o nome `config_yaml`.
+Se preferir executar cada passo separadamente, os scripts individuais continuam disponiveis:
 
-### 9. Subir os CSVs para a camada raw do ADLS
-
-```powershell
-python scripts/upload_raw_data.py
-```
-
-Os arquivos vão para `abfss://marathon-data@<storage>.dfs.core.windows.net/raw/`.
-
-> A partir deste ponto, novos arquivos colocados na pasta `raw/` do ADLS disparam automaticamente o pipeline via **File Arrival Trigger** (passo 10).
-
-### 10. Criar o Databricks Workflow com File Arrival Trigger
-
-```powershell
-$env:DATABRICKS_REPO_PATH = "/Workspace/Repos/<usuario>/marathon-case-data-master"
-python scripts/create_databricks_workflow.py
-```
-
-Substitua `DATABRICKS_REPO_PATH` pelo caminho do repositório importado no Databricks Repos.
-
-O workflow criado já vem com um trigger do tipo **File Arrival** que monitora a pasta `raw/` do ADLS. Sempre que novos arquivos chegarem, o Databricks inicia o cluster, executa Bronze → Silver → Gold e desliga o cluster automaticamente. Se `ALERT_EMAIL` estiver definido, o workflow envia notificação por email em caso de falha.
-
-Se já tiver um cluster existente, pode usá-lo:
-
-```powershell
-$env:DATABRICKS_REPO_PATH = "/Workspace/Repos/<usuario>/marathon-case-data-master"
-$env:DATABRICKS_CLUSTER_ID = "<cluster-id>"
-python scripts/create_databricks_workflow.py
-```
-
-### 11. Executar o Workflow
-
-A primeira execução pode ser iniciada manualmente no Databricks em `Workflows > Jobs`, selecionando `marathon-case-bronze-silver-gold` e clicando em **Run Now**.
-
-Nas próximas vezes, o pipeline dispara sozinho quando novos arquivos chegam na camada `raw`.
+- `scripts/setup.ps1` — deploy do Bicep
+- `scripts/setup_unity_catalog.py` — Unity Catalog
+- `scripts/setup_databricks_secrets.py` — secrets
+- `scripts/enable_file_events.py` (ou `.ps1`) — roles do EventGrid
+- `scripts/upload_raw_data.py` — upload dos CSVs
+- `scripts/create_databricks_workflow.py` — criação do workflow
 
 O workflow executa em sequência:
 1. **00_bronze_orchestrator** — lê `raw/` do ADLS, gera `run_id`/`batch_id` e ingere os CSVs por fonte na Bronze (uma chamada por fonte; London lido de uma só vez via glob).
@@ -272,11 +217,12 @@ As tabelas Gold estão prontas em `gold.*`. Você pode conectar:
 marathon-case-data-master/
 ├── README.md
 ├── .gitignore
+├── .env.example            # template de variaveis de ambiente
 ├── requirements.txt
 ├── config/
 │   └── config.yaml
 ├── data/
-│   └── raw/                  # CSVs brutos (não versionados)
+│   └── raw/                # CSVs brutos (não versionados)
 ├── docs/
 │   └── architecture.md
 ├── infrastructure/
@@ -291,12 +237,14 @@ marathon-case-data-master/
 │   ├── 04_weather_enrichment.py
 │   └── marathon_metadata.csv.example
 ├── scripts/
-│   ├── setup.ps1
+│   ├── setup_all.py           # setup unificado (recomendado)
+│   ├── setup.ps1              # deploy do Bicep
 │   ├── setup_unity_catalog.py
 │   ├── setup_databricks_secrets.py
 │   ├── upload_raw_data.py
 │   ├── create_databricks_workflow.py
-│   ├── enable_file_events.ps1
+│   ├── enable_file_events.py  # versao Python
+│   ├── enable_file_events.ps1 # versao PowerShell
 │   └── inspect_raw_data.py
 ├── src/
 │   ├── utils.py
@@ -313,6 +261,12 @@ marathon-case-data-master/
 - `monitoring.data_quality_log` já funciona em modo append; adicionar particionamento por `batch_id` para histórico de longo prazo.
 
 ## VII. Changelog
+
+### [2025] — Setup unificado e simplificacao
+
+- **Setup unificado:** novo `scripts/setup_all.py` executa todo o provisionamento e configuracao em um unico comando, com persistencia de estado para retomada.
+- **Arquivo `.env`:** centraliza configuracoes de ambiente (Databricks token, email de alerta, repo path).
+- **Versao Python do enable_file_events:** nao depende mais exclusivamente do PowerShell.
 
 ### [2025] — Ajustes de execução e correções de pipeline
 
