@@ -25,3 +25,6 @@ data/gold/*
 # IDEs
 .vscode/
 .idea/
+
+# Estado local do setup unificado
+.setup_state.json
