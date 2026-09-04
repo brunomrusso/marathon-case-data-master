@@ -21,7 +21,7 @@ que o script retoma de onde parou.
 import argparse
 import json
 import os
-import re
+import shutil
 import subprocess
 import sys
 import time
@@ -103,9 +103,25 @@ def is_completed(state, step):
     return step in state["completed"]
 
 
+def find_az_cli():
+    """Tenta encontrar o executavel do Azure CLI no PATH."""
+    for name in ["az", "az.cmd", "az.exe"]:
+        path = shutil.which(name)
+        if path:
+            return path
+    return None
+
+
 def run_command(cmd, capture=True, check=True, shell=False):
     """Executa comando no shell. Retorna stdout."""
     print_info(f"Executando: {' '.join(cmd) if isinstance(cmd, list) else cmd}")
+
+    if isinstance(cmd, list) and cmd[0] in ("az", "az.cmd"):
+        az_path = find_az_cli()
+        if not az_path:
+            raise FileNotFoundError("Azure CLI (az) nao encontrado no PATH")
+        cmd[0] = az_path
+
     kwargs = {"shell": shell, "text": True}
     if capture:
         kwargs["stdout"] = subprocess.PIPE
@@ -150,12 +166,15 @@ def step_prerequisites(state):
     print_ok(f"Python {py_major}.{py_minor}")
 
     # Azure CLI
+    az_path = find_az_cli()
+    if not az_path:
+        raise RuntimeError("Azure CLI (az) nao encontrado no PATH. Instale: https://aka.ms/installazurecliwindows")
     try:
         az_version = run_command(["az", "--version"], capture=True, check=True)
         first_line = az_version.splitlines()[0]
-        print_ok(f"Azure CLI instalado: {first_line}")
+        print_ok(f"Azure CLI encontrado em {az_path}: {first_line}")
     except FileNotFoundError:
-        raise RuntimeError("Azure CLI (az) nao encontrado. Instale: https://aka.ms/installazurecliwindows")
+        raise RuntimeError("Azure CLI (az) nao encontrado no PATH. Instale: https://aka.ms/installazurecliwindows")
 
     # Git
     try:
