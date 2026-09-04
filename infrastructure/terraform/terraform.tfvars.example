@@ -1,0 +1,3 @@
+# Nenhuma variavel obrigatoria.
+# As configuracoes padrao (location, project_name, environment) podem ser sobrescritas aqui.
+# location = "eastus"

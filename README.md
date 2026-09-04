@@ -70,9 +70,9 @@ Antes de começar, você precisa de:
 - Permissões para criar Resource Groups, Storage Accounts e Databricks Workspaces.
 - **Python 3.10+** instalado localmente.
 - **Azure CLI** instalado e logado (`az login`).
+- **Terraform** instalado (CLI): https://developer.hashicorp.com/terraform/install
 - Acesso aos datasets listados acima.
-- **Workspace Admin no Databricks** (necessário para criar Storage Credentials, External Locations e Catalogs no Unity Catalog).
-- **Metastore do Unity Catalog anexado ao workspace** (passo único no Account Console; o script detecta e orienta se estiver faltando).
+- Permissão para criar o metastore do Unity Catalog (Account Admin ou Metastore Admin na Databricks; o setup guia a obtencao do Account ID).
 
 ### 2. Clonar e preparar o ambiente
 
@@ -113,12 +113,11 @@ cp .env.example .env
 Edite o `.env` e preencha pelo menos:
 
 ```env
-DATABRICKS_TOKEN=                                    # sera solicitado durante o setup
 ALERT_EMAIL=seu-email@exemplo.com                    # opcional
 DATABRICKS_REPO_PATH=/Workspace/Repos/<usuario>/marathon-case-data-master
 ```
 
-> O token do Databricks so pode ser gerado apos o deploy do workspace, entao deixe `DATABRICKS_TOKEN` em branco; o script vai pedir no momento certo.
+> `DATABRICKS_ACCOUNT_ID` sera solicitado durante o setup. Nao precisa preencher antecipadamente.
 
 Execute o setup unico:
 
@@ -126,15 +125,15 @@ Execute o setup unico:
 python scripts/setup_all.py
 ```
 
-Esse script orquestra todo o resto:
+Esse script orquestra todo o resto, com **apenas uma acao manual**: colar o Account ID.
 
-1. Checa prerequisitos (Python, Azure CLI, login)
-2. Faz deploy do Bicep
-3. Atualiza `config/config.yaml` com os recursos criados
-4. Descobre storage access key e URL do Databricks
-5. Solicita o **Databricks Personal Access Token** (com instrucoes na tela)
-6. Valida o token testando a API do Unity Catalog
-7. Configura Unity Catalog (storage credential, external location, catalog) ou detecta se ja existem
+1. Checa prerequisitos (Python, Azure CLI, Terraform)
+2. Garante login no Azure
+3. Cria a infraestrutura Azure via Terraform (resource group, storage, workspace, access connector, key vault)
+4. Atualiza `config/config.yaml` com os recursos criados
+5. Gera Azure AD token para a API do Databricks
+6. **Abre o workspace no navegador e pede o Databricks Account ID** (copiado da URL do Account Console)
+7. Cria/escolhe o metastore, atribui ao workspace e cria storage credential, external location e catalog
 8. Salva secrets no Databricks
 9. Registra EventGrid provider e atribui roles ao Access Connector
 10. Sobe os CSVs para `raw/`
@@ -176,12 +175,12 @@ Nas próximas vezes, o pipeline dispara sozinho quando novos arquivos chegam na 
 
 Se preferir executar cada passo separadamente, os scripts individuais continuam disponiveis:
 
-- `scripts/setup.ps1` — deploy do Bicep
-- `scripts/setup_unity_catalog.py` — Unity Catalog
-- `scripts/setup_databricks_secrets.py` — secrets
-- `scripts/enable_file_events.py` (ou `.ps1`) — roles do EventGrid
+- `infrastructure/terraform/` — deploy completo via Terraform
+- `scripts/setup_all.py` — orquestracao unificada
 - `scripts/upload_raw_data.py` — upload dos CSVs
 - `scripts/create_databricks_workflow.py` — criação do workflow
+
+> **O Bicep (`infrastructure/main.bicep` e `resources.bicep`) ainda existe como alternativa**, mas nao cria automaticamente o metastore do Unity Catalog. Use o Terraform para provisionamento end-to-end.
 
 O workflow executa em sequência:
 1. **00_bronze_orchestrator** — lê `raw/` do ADLS, gera `run_id`/`batch_id` e ingere os CSVs por fonte na Bronze (uma chamada por fonte; London lido de uma só vez via glob).
@@ -230,7 +229,14 @@ marathon-case-data-master/
 ├── docs/
 │   └── architecture.md
 ├── infrastructure/
-│   ├── main.bicep
+│   ├── terraform/           # provisionamento end-to-end (recomendado)
+│   │   ├── main.tf
+│   │   ├── metastore.tf
+│   │   ├── providers.tf
+│   │   ├── variables.tf
+│   │   ├── outputs.tf
+│   │   └── terraform.tfvars.example
+│   ├── main.bicep           # alternativa Azure-only
 │   ├── resources.bicep
 │   └── parameters.json
 ├── notebooks/
@@ -241,14 +247,14 @@ marathon-case-data-master/
 │   ├── 04_weather_enrichment.py
 │   └── marathon_metadata.csv.example
 ├── scripts/
-│   ├── setup_all.py           # setup unificado (recomendado)
-│   ├── setup.ps1              # deploy do Bicep
-│   ├── setup_unity_catalog.py
+│   ├── setup_all.py              # setup unificado (recomendado)
+│   ├── setup_unity_catalog.py    # cria/escolhe metastore e configura UC
+│   ├── setup.ps1                 # deploy do Bicep (alternativa)
 │   ├── setup_databricks_secrets.py
 │   ├── upload_raw_data.py
 │   ├── create_databricks_workflow.py
-│   ├── enable_file_events.py  # versao Python
-│   ├── enable_file_events.ps1 # versao PowerShell
+│   ├── enable_file_events.py     # versao Python
+│   ├── enable_file_events.ps1    # versao PowerShell
 │   └── inspect_raw_data.py
 ├── src/
 │   ├── utils.py
@@ -269,10 +275,13 @@ marathon-case-data-master/
 ### [2025] — Setup unificado e simplificacao
 
 - **Setup unificado:** novo `scripts/setup_all.py` executa todo o provisionamento e configuracao em um unico comando, com persistencia de estado para retomada.
-- **Arquivo `.env`:** centraliza configuracoes de ambiente (Databricks token, email de alerta, repo path).
+- **Infraestrutura como Terraform:** pasta `infrastructure/terraform/` cria Azure resources e Databricks workspace de forma automatizada.
+- **Configuracao do Unity Catalog via script:** `scripts/setup_unity_catalog.py` cria/escolhe metastore, atribui o workspace e cria storage credential, external location e catalog.
+- **Sem token manual:** o setup usa Azure AD token do CLI, eliminando a geracao manual de Databricks Personal Access Token.
+- **Unica acao manual:** colar o Databricks Account ID (obtido da URL do Account Console) no terminal durante o setup.
+- **Arquivo `.env`:** centraliza configuracoes de ambiente (Databricks account ID, email de alerta, repo path).
 - **Versao Python do enable_file_events:** nao depende mais exclusivamente do PowerShell.
-- **Validacao de token aprimorada:** testa o token direto na API do Unity Catalog, evitando falso positivo.
-- **Deteccao de recursos existentes:** storage credential, external location e catalog sao verificados antes de tentar criar, reduzindo erros desnecessarios.
+- **Bicep mantido como alternativa:** arquivos `infrastructure/main.bicep` e `resources.bicep` continuam disponiveis, mas nao automatizam o metastore.
 
 ### [2025] — Ajustes de execução e correções de pipeline
 

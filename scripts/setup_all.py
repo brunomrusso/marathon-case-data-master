@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
 """
-Setup unificado do projeto marathon-case-data-master.
+Setup unificado do projeto marathon-case-data-master (versao Terraform).
 
-Executa todo o fluxo de provisionamento e configuracao:
-1. Checa prerequisitos
-2. Carrega/configura .env
-3. Login no Azure
-4. Deploy Bicep
-5. Atualiza config/config.yaml
-6. Configura Unity Catalog
-7. Configura secrets
-8. Habilita file events
-9. Sobe CSVs
-10. Cria workflow
+Fluxo:
+1. Checa prerequisitos (Python, Azure CLI, Terraform)
+2. Login no Azure
+3. Cria infraestrutura Azure via Terraform (resource group, storage, workspace, access connector, key vault)
+4. Atualiza config.yaml e obtem storage key
+5. Gera Azure AD token para a API do Databricks
+6. Pede o Databricks Account ID (instrucoes na tela)
+7. Cria/escolhe metastore e atribui ao workspace (scripts/setup_unity_catalog.py)
+8. Salva secrets no Databricks
+9. Habilita file events
+10. Sobe CSVs
+11. Cria workflow
 
-Progresso eh salvo em .setup_state.json. Se falhar, basta rodar novamente
-que o script retoma de onde parou.
+Progresso salvo em .setup_state.json (nao versionado).
 """
 
 import argparse
@@ -25,9 +25,10 @@ import shutil
 import subprocess
 import sys
 import time
-from datetime import datetime
+import webbrowser
 from pathlib import Path
 
+import requests
 import yaml
 from dotenv import load_dotenv
 
@@ -37,19 +38,17 @@ STATE_FILE = PROJECT_ROOT / ".setup_state.json"
 ENV_FILE = PROJECT_ROOT / ".env"
 ENV_EXAMPLE = PROJECT_ROOT / ".env.example"
 CONFIG_FILE = PROJECT_ROOT / "config" / "config.yaml"
-PARAMETERS_FILE = PROJECT_ROOT / "infrastructure" / "parameters.json"
-BICEP_FILE = PROJECT_ROOT / "infrastructure" / "main.bicep"
+TERRAFORM_DIR = PROJECT_ROOT / "infrastructure" / "terraform"
 
-REQUIRED_ENV = []
-REQUIRED_ENV_LATER = ["DATABRICKS_TOKEN"]  # solicitado apos o deploy Bicep
+DATABRICKS_AAD_RESOURCE = "2ff814a6-3304-4ab8-85cb-cd0e6f879c1d"
 
 STEPS = [
     "prerequisites",
     "env",
     "azure_login",
-    "deploy_bicep",
+    "deploy_terraform",
     "update_config",
-    "databricks_token",
+    "account_id",
     "unity_catalog",
     "databricks_secrets",
     "enable_file_events",
@@ -103,26 +102,26 @@ def is_completed(state, step):
     return step in state["completed"]
 
 
-def find_az_cli():
-    """Tenta encontrar o executavel do Azure CLI no PATH."""
-    for name in ["az", "az.cmd", "az.exe"]:
-        path = shutil.which(name)
+def find_executable(name):
+    for ext in ["", ".cmd", ".exe", ".bat"]:
+        path = shutil.which(name + ext)
         if path:
             return path
-    return None
+    return shutil.which(name)
 
 
-def run_command(cmd, capture=True, check=True, shell=False):
-    """Executa comando no shell. Retorna stdout se capture=True, senao retorna string vazia."""
+def run_command(cmd, capture=True, check=True, shell=False, cwd=None):
     print_info(f"Executando: {' '.join(cmd) if isinstance(cmd, list) else cmd}")
 
-    if isinstance(cmd, list) and cmd[0] in ("az", "az.cmd"):
-        az_path = find_az_cli()
-        if not az_path:
-            raise FileNotFoundError("Azure CLI (az) nao encontrado no PATH")
-        cmd[0] = az_path
+    if isinstance(cmd, list) and cmd[0] in ("az", "az.cmd", "az.exe", "terraform"):
+        exe = find_executable(cmd[0])
+        if not exe:
+            raise FileNotFoundError(f"Comando nao encontrado no PATH: {cmd[0]}")
+        cmd[0] = exe
 
     kwargs = {"shell": shell, "text": True}
+    if cwd:
+        kwargs["cwd"] = cwd
     if capture:
         kwargs["stdout"] = subprocess.PIPE
         kwargs["stderr"] = subprocess.PIPE
@@ -154,64 +153,13 @@ def ensure_dotenv():
             ENV_FILE.write_text(ENV_EXAMPLE.read_text(), encoding="utf-8")
         else:
             ENV_FILE.write_text("", encoding="utf-8")
-        print_info("Edite o arquivo .env e preencha pelo menos DATABRICKS_TOKEN.")
+        print_info("Edite o arquivo .env se quiser customizar ALERT_EMAIL ou DATABRICKS_REPO_PATH.")
     load_dotenv(ENV_FILE)
-
-
-def step_prerequisites(state):
-    print_step(STEPS.index("prerequisites") + 1, "Checando prerequisitos")
-
-    # Python version
-    py_major, py_minor = sys.version_info[:2]
-    if py_major < 3 or (py_major == 3 and py_minor < 10):
-        raise RuntimeError("Python 3.10+ e necessario")
-    print_ok(f"Python {py_major}.{py_minor}")
-
-    # Azure CLI
-    az_path = find_az_cli()
-    if not az_path:
-        raise RuntimeError("Azure CLI (az) nao encontrado no PATH. Instale: https://aka.ms/installazurecliwindows")
-    try:
-        az_version = run_command(["az", "--version"], capture=True, check=True)
-        first_line = az_version.splitlines()[0]
-        print_ok(f"Azure CLI encontrado em {az_path}: {first_line}")
-    except FileNotFoundError:
-        raise RuntimeError("Azure CLI (az) nao encontrado no PATH. Instale: https://aka.ms/installazurecliwindows")
-
-    # Git
-    try:
-        run_command(["git", "--version"], capture=True, check=True)
-        print_ok("Git instalado")
-    except FileNotFoundError:
-        print_warn("Git nao encontrado. Nao e obrigatorio para executar o pipeline.")
-
-    mark_completed(state, "prerequisites")
-
-
-def step_env(state):
-    print_step(STEPS.index("env") + 1, "Carregando configuracoes do .env")
-    ensure_dotenv()
-
-    # Checa variaveis obrigatorias
-    missing = []
-    for var in REQUIRED_ENV:
-        if not os.environ.get(var):
-            missing.append(var)
-
-    if missing:
-        print_warn(f"Variaveis ausentes no .env: {', '.join(missing)}")
-        for var in missing:
-            os.environ[var] = prompt(f"Digite {var}", required=True)
-        # Salva no .env
-        update_env_file(missing)
-
-    print_ok("Configuracoes carregadas")
-    mark_completed(state, "env")
 
 
 def update_env_file(vars_to_update):
     lines = ENV_FILE.read_text(encoding="utf-8").splitlines() if ENV_FILE.exists() else []
-    existing = {line.split("=", 1)[0]: i for i, line in enumerate(lines) if "=" in line}
+    existing = {line.split("=", 1)[0]: i for i, line in enumerate(lines) if "=" in line and not line.startswith("#")}
     for var in vars_to_update:
         value = os.environ.get(var, "")
         if var in existing:
@@ -221,84 +169,100 @@ def update_env_file(vars_to_update):
     ENV_FILE.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def step_prerequisites(state):
+    print_step(STEPS.index("prerequisites") + 1, "Checando prerequisitos")
+
+    py_major, py_minor = sys.version_info[:2]
+    if py_major < 3 or (py_major == 3 and py_minor < 10):
+        raise RuntimeError("Python 3.10+ e necessario")
+    print_ok(f"Python {py_major}.{py_minor}")
+
+    az_path = find_executable("az")
+    if not az_path:
+        raise RuntimeError("Azure CLI nao encontrado. Instale: https://aka.ms/installazurecliwindows")
+    az_version = run_command(["az", "--version"], capture=True, check=True)
+    print_ok(f"Azure CLI: {az_version.splitlines()[0]}")
+
+    tf_path = find_executable("terraform")
+    if not tf_path:
+        raise RuntimeError("Terraform nao encontrado. Instale: https://developer.hashicorp.com/terraform/install")
+    tf_version = run_command(["terraform", "-version"], capture=True, check=True)
+    print_ok(f"Terraform: {tf_version.splitlines()[0]}")
+
+    try:
+        run_command(["git", "--version"], capture=True, check=True)
+        print_ok("Git instalado")
+    except FileNotFoundError:
+        print_warn("Git nao encontrado (nao obrigatorio)")
+
+    mark_completed(state, "prerequisites")
+
+
+def step_env(state):
+    print_step(STEPS.index("env") + 1, "Carregando configuracoes do .env")
+    ensure_dotenv()
+    print_ok("Configuracoes carregadas")
+    mark_completed(state, "env")
+
+
 def step_azure_login(state):
     print_step(STEPS.index("azure_login") + 1, "Garantindo login no Azure")
 
     try:
         account = run_command(["az", "account", "show"], capture=True, check=True)
         account_json = json.loads(account)
-        print_ok(f"Ja logado na subscription {account_json.get('name')} ({account_json.get('id')})")
+        print_ok(f"Ja logado: {account_json.get('name')} ({account_json.get('id')})")
     except (RuntimeError, json.JSONDecodeError):
-        print_info("Nao esta logado. Executando 'az login'...")
+        print_info("Nao logado. Executando az login...")
         run_command(["az", "login"], capture=False, check=True)
         account = run_command(["az", "account", "show"], capture=True, check=True)
         account_json = json.loads(account)
-        print_ok(f"Logado na subscription {account_json.get('name')} ({account_json.get('id')})")
+        print_ok(f"Logado: {account_json.get('name')} ({account_json.get('id')})")
 
     sub_id = os.environ.get("SUBSCRIPTION_ID")
     if sub_id:
         run_command(["az", "account", "set", "--subscription", sub_id], capture=True, check=True)
-        print_ok(f"Subscription ativa definida para {sub_id}")
+        print_ok(f"Subscription ativa: {sub_id}")
 
     mark_completed(state, "azure_login")
 
 
-def step_deploy_bicep(state):
-    print_step(STEPS.index("deploy_bicep") + 1, "Provisionando infraestrutura via Bicep")
+def step_deploy_terraform(state):
+    print_step(STEPS.index("deploy_terraform") + 1, "Provisionando infraestrutura Azure via Terraform")
 
-    if not PARAMETERS_FILE.exists():
-        raise RuntimeError(f"parameters.json nao encontrado em {PARAMETERS_FILE}")
-    if not BICEP_FILE.exists():
-        raise RuntimeError(f"main.bicep nao encontrado em {BICEP_FILE}")
+    if not TERRAFORM_DIR.exists():
+        raise RuntimeError(f"Diretorio Terraform nao encontrado: {TERRAFORM_DIR}")
 
-    deploy_name = f"marathon-case-deploy-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    print_info("terraform init")
+    run_command(["terraform", "init"], capture=False, check=True, cwd=str(TERRAFORM_DIR))
 
-    print_info(f"Deployment name: {deploy_name}")
-    run_command(
-        [
-            "az", "deployment", "sub", "create",
-            "--name", deploy_name,
-            "--location", "eastus",
-            "--template-file", str(BICEP_FILE),
-            "--parameters", str(PARAMETERS_FILE),
-        ],
-        capture=False,
-        check=True,
-    )
+    print_info("terraform apply (pode levar 5-10 minutos)")
+    run_command(["terraform", "apply", "-auto-approve"], capture=False, check=True, cwd=str(TERRAFORM_DIR))
 
-    print_info("Recuperando outputs do deploy...")
-    deployment_json = run_command(
-        ["az", "deployment", "sub", "show", "--name", deploy_name],
-        capture=True,
-        check=True,
-    )
-    deployment = json.loads(deployment_json)
-    if deployment["properties"]["provisioningState"] != "Succeeded":
-        raise RuntimeError(f"Deploy nao sucedeu: {deployment['properties']['provisioningState']}")
-
-    outputs = deployment["properties"]["outputs"]
-    state["outputs"] = {k: v["value"] for k, v in outputs.items()}
-    state["outputs"]["deployment_name"] = deploy_name
+    print_info("Recuperando outputs...")
+    outputs_json = run_command(["terraform", "output", "-json"], capture=True, check=True, cwd=str(TERRAFORM_DIR))
+    outputs = json.loads(outputs_json)
+    state["outputs"].update({k: v["value"] for k, v in outputs.items()})
     save_state(state)
 
-    print_ok(f"Resource Group: {state['outputs'].get('resourceGroupName')}")
-    print_ok(f"Storage Account: {state['outputs'].get('storageAccountName')}")
-    print_ok(f"Databricks Workspace: {state['outputs'].get('databricksWorkspaceName')}")
-    print_ok(f"Key Vault: {state['outputs'].get('keyVaultName')}")
-    print_ok(f"Access Connector ID: {state['outputs'].get('accessConnectorId')}")
+    print_ok(f"Resource Group: {state['outputs'].get('resource_group_name')}")
+    print_ok(f"Storage Account: {state['outputs'].get('storage_account_name')}")
+    print_ok(f"Databricks Workspace: {state['outputs'].get('databricks_workspace_name')}")
+    print_ok(f"Workspace URL: https://{state['outputs'].get('databricks_workspace_url')}")
+    print_ok(f"Access Connector ID: {state['outputs'].get('access_connector_id')}")
 
-    mark_completed(state, "deploy_bicep")
+    mark_completed(state, "deploy_terraform")
 
 
 def step_update_config(state):
-    print_step(STEPS.index("update_config") + 1, "Atualizando config/config.yaml com os recursos deployados")
+    print_step(STEPS.index("update_config") + 1, "Atualizando config/config.yaml")
 
     outputs = state["outputs"]
-    rg = outputs.get("resourceGroupName", "rg-marathon-case")
-    storage = outputs.get("storageAccountName", "stmarathoncase")
-    workspace = outputs.get("databricksWorkspaceName", "dbw-marathon-case")
-    kv = outputs.get("keyVaultName", "kv-marathon-case")
-    container = "marathon-data"
+    rg = outputs.get("resource_group_name")
+    storage = outputs.get("storage_account_name")
+    container = outputs.get("container_name")
+    workspace = outputs.get("databricks_workspace_name")
+    kv = outputs.get("key_vault_name")
 
     config = yaml.safe_load(CONFIG_FILE.read_text(encoding="utf-8")) if CONFIG_FILE.exists() else {}
     config.setdefault("azure", {})
@@ -317,7 +281,6 @@ def step_update_config(state):
     CONFIG_FILE.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
     print_ok(f"config.yaml atualizado com storage_account={storage}")
 
-    # Tambem descobre a storage key para uso posterior
     print_info("Obtendo storage access key...")
     storage_key = run_command(
         [
@@ -334,196 +297,102 @@ def step_update_config(state):
     update_env_file(["STORAGE_ACCESS_KEY"])
     print_ok("Storage access key salva no .env")
 
-    # Descobre URL do Databricks workspace
-    ws_url = outputs.get("databricksWorkspaceUrl")
-    if ws_url and not ws_url.startswith("https://"):
-        ws_url = f"https://{ws_url}"
-    if ws_url:
-        os.environ["DATABRICKS_HOST"] = ws_url
-        update_env_file(["DATABRICKS_HOST"])
-        print_ok(f"DATABRICKS_HOST atualizado: {ws_url}")
+    host = f"https://{outputs.get('databricks_workspace_url')}"
+    os.environ["DATABRICKS_HOST"] = host
+    update_env_file(["DATABRICKS_HOST"])
+    print_ok(f"DATABRICKS_HOST: {host}")
+
+    os.environ["DATABRICKS_WORKSPACE_ID"] = str(outputs.get("workspace_id"))
+    update_env_file(["DATABRICKS_WORKSPACE_ID"])
+    print_ok(f"DATABRICKS_WORKSPACE_ID: {outputs.get('workspace_id')}")
+
+    os.environ["ACCESS_CONNECTOR_ID"] = outputs.get("access_connector_id")
+    update_env_file(["ACCESS_CONNECTOR_ID"])
+    print_ok("ACCESS_CONNECTOR_ID salvo no .env")
 
     mark_completed(state, "update_config")
 
 
-def step_databricks_token(state):
-    print_step(STEPS.index("databricks_token") + 1, "Solicitando token do Databricks")
-
-    host = os.environ.get("DATABRICKS_HOST")
-    if not host:
-        raise RuntimeError("DATABRICKS_HOST nao encontrado. O passo update_config deve ter falhado.")
-
-    token = os.environ.get("DATABRICKS_TOKEN")
-    if not token:
-        print_info(f"Acesse {host}")
-        print_info("Va em User Settings > Developer > Access tokens > Generate new token")
-        token = prompt("Cole o Databricks Personal Access Token", required=True, secret=True)
-        os.environ["DATABRICKS_TOKEN"] = token
-        update_env_file(["DATABRICKS_TOKEN"])
-
-    # Testa o token com a API real que sera usada no Unity Catalog
-    print_info("Validando token com a API do Unity Catalog...")
-    resp = requests_get(f"{host}/api/2.1/unity-catalog/storage-credentials", token)
-    if resp.status_code == 200:
-        print_ok("Token validado — acesso ao Unity Catalog confirmado")
-    elif resp.status_code == 403:
-        print_error("Token valido, mas sem permissao para a API do Unity Catalog.")
-        print_info("Verifique:")
-        print_info("  - O token foi gerado no workspace correto: {host}")
-        print_info("  - O usuario tem Workspace Admin ou Metastore Admin")
-        print_info("  - O workspace tem um metastore do Unity Catalog anexado")
-        raise RuntimeError("Token sem permissao para Unity Catalog")
-    else:
-        raise RuntimeError(f"Token invalido ou workspace inacessivel: {resp.status_code} - {resp.text}")
-
-    mark_completed(state, "databricks_token")
+def get_aad_token_for_databricks():
+    token_json = run_command(
+        ["az", "account", "get-access-token", "--resource", DATABRICKS_AAD_RESOURCE],
+        capture=True,
+        check=True,
+    )
+    return json.loads(token_json)["accessToken"]
 
 
-def requests_get(url, token):
-    import requests
-    return requests.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=30)
+def step_account_id(state):
+    print_step(STEPS.index("account_id") + 1, "Obtendo Databricks Account ID")
 
-
-def requests_post(url, token, json_data):
-    import requests
-    return requests.post(url, headers={"Authorization": f"Bearer {token}"}, json=json_data, timeout=30)
-
-
-def check_unity_catalog_access(host, token):
-    """Verifica se o token tem permissao para gerenciar storage credentials."""
-    print_info("Verificando acesso ao Unity Catalog...")
-    resp = requests_get(f"{host}/api/2.1/unity-catalog/storage-credentials", token)
-    if resp.status_code == 200:
-        return True, None
-    if resp.status_code == 403:
-        return False, "Token valido, mas sem permissao para Unity Catalog (Workspace Admin ou Metastore Admin necessario)."
-    return False, f"Workspace nao respondeu como esperado: {resp.status_code} - {resp.text}"
-
-
-def resource_exists(url, token, name):
-    """Verifica se um recurso do Unity Catalog ja existe."""
-    resp = requests_get(url, token)
-    if resp.status_code != 200:
-        return False
-    data = resp.json()
-    items = data.get("storage_credentials") or data.get("external_locations") or data.get("catalogs") or []
-    return any(item.get("name") == name for item in items)
-
-
-def step_unity_catalog(state, skip_manual=False):
-    print_step(STEPS.index("unity_catalog") + 1, "Configurando Unity Catalog")
+    account_id = os.environ.get("DATABRICKS_ACCOUNT_ID")
+    if account_id:
+        print_ok(f"Account ID do .env: {account_id}")
+        state["outputs"]["databricks_account_id"] = account_id
+        save_state(state)
+        mark_completed(state, "account_id")
+        return
 
     host = os.environ["DATABRICKS_HOST"].rstrip("/")
-    token = os.environ["DATABRICKS_TOKEN"]
-    access_connector_id = state["outputs"]["accessConnectorId"]
+    workspace_url = state["outputs"].get("databricks_workspace_url")
 
-    config = yaml.safe_load(CONFIG_FILE.read_text(encoding="utf-8"))
-    storage = config["azure"]["storage_account"]
-    container = config["azure"]["container"]
-    external_url = f"abfss://{container}@{storage}.dfs.core.windows.net/"
+    print_info("")
+    print_info("=" * 60)
+    print_info("ACAO MANUAL NECESSARIA: obter o Databricks Account ID")
+    print_info("=" * 60)
+    print_info("Passos:")
+    print_info(f"  1. Abra o workspace: {host}")
+    print_info("  2. Clique no icone do usuario (canto superior direito)")
+    print_info("  3. Selecione 'Manage Account' ou 'Account Console'")
+    print_info("  4. A URL do navegador tera o formato:")
+    print_info("     https://accounts.azuredatabricks.net/?account_id=XXXXXXXX")
+    print_info("  5. Copie o numero XXXXXXXX")
+    print_info("=" * 60)
 
-    ok, msg = check_unity_catalog_access(host, token)
-    if not ok:
-        print_error(msg)
-        print_info("")
-        print_info("UNICA ACAO NECESSARIA: anexar um Metastore do Unity Catalog ao workspace.")
-        print_info("1. Acesse https://accounts.azuredatabricks.net (Account Console)")
-        print_info("2. Va em Data > Metastores")
-        print_info("3. Crie um metastore na regiao eastus")
-        print_info("4. Anexe o workspace dbw-marathon-case")
-        print_info("5. Rode novamente: python scripts/setup_all.py")
-        print_info("")
-        print_info("Alternativamente, crie na UI do workspace:")
-        print_info(f"  - Storage Credential: marathon-storage-credential (Azure Managed Identity: {access_connector_id})")
-        print_info(f"  - External Location: marathon-external-location -> {external_url}")
-        print_info(f"  - Catalog: marathon com storage_root em {external_url}catalogs/marathon/")
-        if skip_manual:
-            raise RuntimeError("Unity Catalog nao acessivel")
-        resposta = input("  Deseja pular este passo e configura-lo manualmente? (s/n): ").strip().lower()
-        if resposta in ("s", "sim", "yes", "y"):
-            print_warn("Pulando Unity Catalog. Configure manualmente os recursos acima.")
-            raise RuntimeError("Unity Catalog configurado manualmente — reinicie o setup")
-        raise RuntimeError("Unity Catalog nao acessivel")
+    try:
+        webbrowser.open(host)
+        print_info("Workspace aberto no navegador.")
+    except Exception:
+        pass
 
-    # Storage credential
-    cred_name = "marathon-storage-credential"
-    if resource_exists(f"{host}/api/2.1/unity-catalog/storage-credentials", token, cred_name):
-        print_ok(f"Storage credential '{cred_name}' ja existe")
-    else:
-        resp = requests_post(
-            f"{host}/api/2.1/unity-catalog/storage-credentials",
-            token,
-            {
-                "name": cred_name,
-                "azure_managed_identity": {"access_connector_id": access_connector_id},
-                "comment": "Credencial para acesso ao ADLS do case marathon",
-            },
-        )
-        if resp.status_code == 200:
-            print_ok(f"Storage credential '{cred_name}' criada")
-        elif resp.status_code == 409 or "already exists" in resp.text.lower():
-            print_ok(f"Storage credential '{cred_name}' ja existia")
-        else:
-            raise RuntimeError(f"Erro ao criar storage credential: {resp.status_code} - {resp.text}")
+    account_id = prompt("Cole o Databricks Account ID")
+    os.environ["DATABRICKS_ACCOUNT_ID"] = account_id
+    update_env_file(["DATABRICKS_ACCOUNT_ID"])
+    state["outputs"]["databricks_account_id"] = account_id
+    save_state(state)
+    print_ok(f"Account ID: {account_id}")
+    mark_completed(state, "account_id")
 
-    # External location
-    loc_name = "marathon-external-location"
-    if resource_exists(f"{host}/api/2.1/unity-catalog/external-locations", token, loc_name):
-        print_ok(f"External location '{loc_name}' ja existe")
-    else:
-        resp = requests_post(
-            f"{host}/api/2.1/unity-catalog/external-locations",
-            token,
-            {"name": loc_name, "url": external_url, "credential_name": cred_name, "comment": "External location para o data lake do case marathon"},
-        )
-        if resp.status_code == 200:
-            print_ok(f"External location '{loc_name}' criada: {external_url}")
-        elif resp.status_code == 409 or "already exists" in resp.text.lower():
-            print_ok(f"External location '{loc_name}' ja existia")
-        else:
-            raise RuntimeError(f"Erro ao criar external location: {resp.status_code} - {resp.text}")
 
-    # Catalog
-    catalog_name = "marathon"
-    if resource_exists(f"{host}/api/2.1/unity-catalog/catalogs", token, catalog_name):
-        print_ok(f"Catalog '{catalog_name}' ja existe")
-    else:
-        storage_root = f"{external_url}catalogs/{catalog_name}/"
-        resp = requests_post(
-            f"{host}/api/2.1/unity-catalog/catalogs",
-            token,
-            {"name": catalog_name, "storage_root": storage_root, "comment": "Catalog do case marathon"},
-        )
-        if resp.status_code == 200:
-            print_ok(f"Catalog '{catalog_name}' criado")
-        elif resp.status_code == 409 or "already exists" in resp.text.lower():
-            print_ok(f"Catalog '{catalog_name}' ja existia")
-        else:
-            raise RuntimeError(f"Erro ao criar catalog: {resp.status_code} - {resp.text}")
+def step_unity_catalog(state):
+    print_step(STEPS.index("unity_catalog") + 1, "Configurando Unity Catalog")
 
-    # Secret catalog_name
-    resp = requests_post(
-        f"{host}/api/2.0/secrets/put",
-        token,
-        {"scope": "marathon-scope", "key": "catalog_name", "string_value": catalog_name},
-    )
-    resp.raise_for_status()
-    print_ok("Segredo 'catalog_name' salvo no scope 'marathon-scope'")
+    print_info("Gerando Azure AD token para API do Databricks...")
+    token = get_aad_token_for_databricks()
+    os.environ["DATABRICKS_TOKEN"] = token
+    update_env_file(["DATABRICKS_TOKEN"])
+    print_ok("Azure AD token obtido")
 
+    script = PROJECT_ROOT / "scripts" / "setup_unity_catalog.py"
+    if not script.exists():
+        raise RuntimeError(f"Script nao encontrado: {script}")
+
+    run_command([sys.executable, str(script)], capture=False, check=True)
+    print_ok("Unity Catalog configurado")
     mark_completed(state, "unity_catalog")
 
 
 def step_databricks_secrets(state):
-    print_step(STEPS.index("databricks_secrets") + 1, "Salvando secrets do Databricks")
+    print_step(STEPS.index("databricks_secrets") + 1, "Salvando secrets no Databricks")
 
     host = os.environ["DATABRICKS_HOST"].rstrip("/")
     token = os.environ["DATABRICKS_TOKEN"]
 
-    # Criar scope
-    resp = requests_post(
+    resp = requests.post(
         f"{host}/api/2.0/secrets/scopes/create",
-        token,
-        {"scope": "marathon-scope", "initial_manage_principal": "users"},
+        headers={"Authorization": f"Bearer {token}"},
+        json={"scope": "marathon-scope", "initial_manage_principal": "users"},
+        timeout=30,
     )
     if resp.status_code == 200:
         print_ok("Scope 'marathon-scope' criado")
@@ -532,15 +401,24 @@ def step_databricks_secrets(state):
     else:
         print_warn(f"Aviso ao criar scope: {resp.status_code} - {resp.text}")
 
-    # Salvar config.yaml
     config_yaml = CONFIG_FILE.read_text(encoding="utf-8")
-    resp = requests_post(
+    resp = requests.post(
         f"{host}/api/2.0/secrets/put",
-        token,
-        {"scope": "marathon-scope", "key": "config_yaml", "string_value": config_yaml},
+        headers={"Authorization": f"Bearer {token}"},
+        json={"scope": "marathon-scope", "key": "config_yaml", "string_value": config_yaml},
+        timeout=30,
     )
     resp.raise_for_status()
     print_ok("Segredo 'config_yaml' salvo")
+
+    resp = requests.post(
+        f"{host}/api/2.0/secrets/put",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"scope": "marathon-scope", "key": "catalog_name", "string_value": "marathon"},
+        timeout=30,
+    )
+    resp.raise_for_status()
+    print_ok("Segredo 'catalog_name' salvo")
 
     mark_completed(state, "databricks_secrets")
 
@@ -548,16 +426,16 @@ def step_databricks_secrets(state):
 def step_enable_file_events(state):
     print_step(STEPS.index("enable_file_events") + 1, "Habilitando File Events (EventGrid + roles)")
 
-    config = yaml.safe_load(CONFIG_FILE.read_text(encoding="utf-8"))
-    rg = config["azure"]["resource_group"]
-    storage = config["azure"]["storage_account"]
-    subscription = _get_current_subscription_id()
+    outputs = state["outputs"]
+    rg = outputs.get("resource_group_name")
+    storage = outputs.get("storage_account_name")
+    principal_id = outputs.get("access_connector_principal_id")
+    subscription = run_command(["az", "account", "show", "--query", "id", "-o", "tsv"], capture=True, check=True)
 
-    # Registra provider EventGrid
     print_info("Registrando provider Microsoft.EventGrid...")
     run_command(["az", "provider", "register", "--namespace", "Microsoft.EventGrid", "--subscription", subscription], capture=True, check=False)
 
-    print_info("Aguardando registro do EventGrid (ate 5 minutos)...")
+    print_info("Aguardando registro do EventGrid...")
     for _ in range(30):
         reg_state = run_command(
             ["az", "provider", "show", "--namespace", "Microsoft.EventGrid", "--subscription", subscription, "--query", "registrationState", "-o", "tsv"],
@@ -570,16 +448,6 @@ def step_enable_file_events(state):
         time.sleep(10)
     else:
         raise RuntimeError("Timeout aguardando registro do EventGrid")
-
-    # Obtem principalId do Access Connector
-    access_connector_id = state["outputs"]["accessConnectorId"]
-    ac_name = access_connector_id.split("/")[-1]
-    principal_id = run_command(
-        ["az", "resource", "show", "--ids", access_connector_id, "--query", "properties.managedIdentity.principalId", "-o", "tsv"],
-        capture=True,
-        check=True,
-    )
-    print_ok(f"principalId do Access Connector '{ac_name}': {principal_id}")
 
     scope_storage = f"/subscriptions/{subscription}/resourceGroups/{rg}/providers/Microsoft.Storage/storageAccounts/{storage}"
     scope_rg = f"/subscriptions/{subscription}/resourceGroups/{rg}"
@@ -600,7 +468,7 @@ def step_enable_file_events(state):
                 "--scope", scope_storage,
             ],
             capture=True,
-            check=False,  # pode ja existir
+            check=False,
         )
 
     print_info("Atribuindo 'EventGrid EventSubscription Contributor' no resource group...")
@@ -618,11 +486,6 @@ def step_enable_file_events(state):
 
     print_ok("Roles atribuidas. Pode levar alguns minutos para propagar.")
     mark_completed(state, "enable_file_events")
-
-
-def _get_current_subscription_id():
-    out = run_command(["az", "account", "show", "--query", "id", "-o", "tsv"], capture=True, check=True)
-    return out.strip()
 
 
 def step_upload_raw_data(state):
@@ -658,17 +521,14 @@ def step_create_workflow(state):
     mark_completed(state, "create_workflow")
 
 
-def run_step(state, step_name, skip_manual=False):
+def run_step(state, step_name):
     if is_completed(state, step_name):
         print_step(STEPS.index(step_name) + 1, f"Pulando '{step_name}' (ja concluido)")
         return
 
     step_func = globals()[f"step_{step_name}"]
     try:
-        if step_name == "unity_catalog":
-            step_func(state, skip_manual=skip_manual)
-        else:
-            step_func(state)
+        step_func(state)
     except Exception as e:
         print_error(f"Falha no passo '{step_name}': {e}")
         print_info("Corrija o problema e rode novamente 'python scripts/setup_all.py' para retomar.")
@@ -678,7 +538,6 @@ def run_step(state, step_name, skip_manual=False):
 def main():
     parser = argparse.ArgumentParser(description="Setup unificado do projeto marathon-case-data-master")
     parser.add_argument("--reset", action="store_true", help="Apaga o estado e reinicia do zero")
-    parser.add_argument("--skip-unity-catalog", action="store_true", help="Pula configuracao do Unity Catalog (configurar manualmente)")
     args = parser.parse_args()
 
     state = load_state()
@@ -692,7 +551,7 @@ def main():
     print(_color("=" * 60, "cyan"))
 
     for step in STEPS:
-        run_step(state, step, skip_manual=args.skip_unity_catalog)
+        run_step(state, step)
 
     print("\n" + _color("=" * 60, "green"))
     print(_color(" Setup concluido com sucesso! ", "green"))
