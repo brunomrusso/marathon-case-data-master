@@ -182,11 +182,12 @@ def main():
 
     # Verifica se workspace ja tem metastore atribuido
     print(f"Verificando se Unity Catalog esta ativado no workspace {workspace_id}...")
-    resp = workspace_api("GET", host, token, f"/api/2.1/unity-catalog/workspaces/{workspace_id}/metastore")
+    resp = workspace_api("GET", host, token, "/api/2.1/unity-catalog/catalogs")
     print(f"Resposta: {resp.status_code} - {resp.text[:200]}")
     if resp.status_code == 200:
-        current = resp.json()
-        print(f"Unity Catalog ativado. Metastore: {current.get('metastore_id')}")
+        catalogs = resp.json().get("catalogs", [])
+        catalog_names = [c.get("name") for c in catalogs]
+        print(f"Unity Catalog ativado. Catalogs: {catalog_names}")
     else:
         print(f"Unity Catalog NAO ativado (status {resp.status_code}).")
         if not account_id:

@@ -335,13 +335,17 @@ def step_account_id(state):
     print_info("Verificando se Unity Catalog ja esta ativado...")
     print_info(f"Workspace ID usado: {workspace_id}")
     resp = requests.get(
-        f"{host}/api/2.1/unity-catalog/workspaces/{workspace_id}/metastore",
+        f"{host}/api/2.1/unity-catalog/catalogs",
         headers={"Authorization": f"Bearer {token}"},
         timeout=30,
     )
     print_info(f"Resposta: {resp.status_code} - {resp.text[:200]}")
     if resp.status_code == 200:
-        print_ok("Unity Catalog ja ativado. Account ID nao necessario.")
+        catalogs = resp.json().get("catalogs", [])
+        catalog_names = [c.get("name") for c in catalogs]
+        print_ok(f"Unity Catalog ativado. Catalogs encontrados: {catalog_names}")
+        if "marathon" in catalog_names:
+            print_ok("Catalog 'marathon' ja existe. Account ID nao necessario.")
         state["outputs"]["unity_catalog_ready"] = True
         save_state(state)
         mark_completed(state, "account_id")
