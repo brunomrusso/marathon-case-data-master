@@ -52,21 +52,27 @@ def get_aad_token_for_databricks():
     raise RuntimeError("Falha ao obter Azure AD token para Databricks")
 
 
-def databricks_api(method, host, token, path, json_data=None, params=None, timeout=30):
+def databricks_api(method, host, token, path, json_data=None, params=None, timeout=30, retries=5):
     url = f"{host.rstrip('/')}{path}"
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-    if method == "GET":
-        resp = requests.get(url, headers=headers, params=params, timeout=timeout)
-    elif method == "POST":
-        resp = requests.post(url, headers=headers, json=json_data, timeout=timeout)
-    elif method == "PUT":
-        resp = requests.put(url, headers=headers, json=json_data, timeout=timeout)
-    elif method == "PATCH":
-        resp = requests.patch(url, headers=headers, json=json_data, timeout=timeout)
-    elif method == "DELETE":
-        resp = requests.delete(url, headers=headers, timeout=timeout)
-    else:
-        raise ValueError(f"Metodo HTTP nao suportado: {method}")
+    for attempt in range(retries):
+        if method == "GET":
+            resp = requests.get(url, headers=headers, params=params, timeout=timeout)
+        elif method == "POST":
+            resp = requests.post(url, headers=headers, json=json_data, timeout=timeout)
+        elif method == "PUT":
+            resp = requests.put(url, headers=headers, json=json_data, timeout=timeout)
+        elif method == "PATCH":
+            resp = requests.patch(url, headers=headers, json=json_data, timeout=timeout)
+        elif method == "DELETE":
+            resp = requests.delete(url, headers=headers, timeout=timeout)
+        else:
+            raise ValueError(f"Metodo HTTP nao suportado: {method}")
+        if resp.status_code != 429:
+            return resp
+        wait = 2 ** attempt + 1
+        print(f"Rate limit (429) em {path}. Aguardando {wait}s antes de tentar novamente...")
+        time.sleep(wait)
     return resp
 
 
