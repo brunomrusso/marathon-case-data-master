@@ -65,7 +65,7 @@ def databricks_api(method, host, token, path, json_data=None, params=None, timeo
         elif method == "PATCH":
             resp = requests.patch(url, headers=headers, json=json_data, timeout=timeout)
         elif method == "DELETE":
-            resp = requests.delete(url, headers=headers, timeout=timeout)
+            resp = requests.delete(url, headers=headers, params=params, timeout=timeout)
         else:
             raise ValueError(f"Metodo HTTP nao suportado: {method}")
         if resp.status_code != 429:
@@ -149,14 +149,18 @@ def create_storage_credential(host, token, name, access_connector_id):
     resp_ext = workspace_api("GET", host, token, "/api/2.1/unity-catalog/external-locations/marathon-external-location")
     if resp_ext.status_code == 200:
         print("Removendo external location dependente...")
-        workspace_api("DELETE", host, token, "/api/2.1/unity-catalog/external-locations/marathon-external-location")
+        del_ext = workspace_api("DELETE", host, token, "/api/2.1/unity-catalog/external-locations/marathon-external-location", params={"force": "true"})
+        if del_ext.status_code not in (200, 204):
+            print(f"Aviso: nao foi possivel deletar external location: {del_ext.status_code} - {del_ext.text}")
+        time.sleep(5)
 
     resp = workspace_api("GET", host, token, f"/api/2.1/unity-catalog/storage-credentials/{name}")
     if resp.status_code == 200:
         print(f"Removendo storage credential '{name}' antiga...")
-        del_resp = workspace_api("DELETE", host, token, f"/api/2.1/unity-catalog/storage-credentials/{name}")
+        del_resp = workspace_api("DELETE", host, token, f"/api/2.1/unity-catalog/storage-credentials/{name}", params={"force": "true"})
         if del_resp.status_code not in (200, 204):
             print(f"Aviso: nao foi possivel deletar storage credential antiga: {del_resp.status_code} - {del_resp.text}")
+        time.sleep(5)
 
     resp = workspace_api("POST", host, token, "/api/2.1/unity-catalog/storage-credentials", {
         "name": name,
