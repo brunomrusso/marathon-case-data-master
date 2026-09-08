@@ -121,7 +121,9 @@ def main():
         headers={"Authorization": f"Bearer {token}"},
         json=job,
     )
-    resp.raise_for_status()
+    if resp.status_code != 200:
+        print(f"Erro ao criar workflow: {resp.status_code} - {resp.text}")
+        resp.raise_for_status()
     print(f"Workflow criado: job_id={resp.json()['job_id']}")
 
 

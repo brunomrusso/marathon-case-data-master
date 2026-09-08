@@ -606,6 +606,11 @@ def step_upload_raw_data(state):
 def step_create_workflow(state):
     print_step(STEPS.index("create_workflow") + 1, "Criando Databricks Workflow")
 
+    # Garante que o host e token do Databricks sao os atuais (evita valores desatualizados do .env)
+    host = f"https://{state['outputs']['databricks_workspace_url']}"
+    os.environ["DATABRICKS_HOST"] = host
+    print_ok(f"Workspace URL: {host}")
+
     repo_path = os.environ.get("DATABRICKS_REPO_PATH")
     if not repo_path:
         print_warn("DATABRICKS_REPO_PATH nao definido no .env")
