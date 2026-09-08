@@ -345,7 +345,8 @@ def step_account_id(state):
         print_info("  5. Cole o token abaixo (comeca com 'dapi...')")
         print_info("=" * 60)
         try:
-            webbrowser.open(f"{host}/setting/user?display_access_tokens=true")
+            webbrowser.open(host)
+            print_info("Workspace aberto no navegador. Navegue ate User Settings > Developer > Access tokens.")
         except Exception:
             pass
 
@@ -419,7 +420,12 @@ def _test_uc_token(host, token):
 def step_unity_catalog(state):
     print_step(STEPS.index("unity_catalog") + 1, "Configurando Unity Catalog")
 
-    host = os.environ["DATABRICKS_HOST"].rstrip("/")
+    # Sempre usa o workspace URL do estado atual (Terraform), nunca do .env se estiver desatualizado
+    host = f"https://{state['outputs']['databricks_workspace_url']}"
+    os.environ["DATABRICKS_HOST"] = host
+    update_env_file(["DATABRICKS_HOST"])
+    print_ok(f"Workspace URL atualizado: {host}")
+
     token = os.environ.get("DATABRICKS_TOKEN")
 
     if not token or not _test_uc_token(host, token):
@@ -438,7 +444,8 @@ def step_unity_catalog(state):
         print_info("  5. Cole o token abaixo (comeca com 'dapi...')")
         print_info("=" * 60)
         try:
-            webbrowser.open(f"{host}/setting/user?display_access_tokens=true")
+            webbrowser.open(host)
+            print_info("Workspace aberto no navegador. Navegue ate User Settings > Developer > Access tokens.")
         except Exception:
             pass
 
