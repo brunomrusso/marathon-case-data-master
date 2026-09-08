@@ -193,16 +193,21 @@ def create_external_location(host, token, name, url, credential_name):
 
 
 def create_catalog(host, token, name, storage_root):
-    if resource_exists(host, "/api/2.1/unity-catalog/catalogs", token, name, "catalogs"):
-        print(f"Catalog '{name}' ja existe")
-        return
+    resp = workspace_api("GET", host, token, f"/api/2.1/unity-catalog/catalogs/{name}")
+    if resp.status_code == 200:
+        print(f"Catalog '{name}' ja existe. Removendo para garantir estado limpo...")
+        del_resp = workspace_api("DELETE", host, token, f"/api/2.1/unity-catalog/catalogs/{name}", params={"force": "true"})
+        if del_resp.status_code not in (200, 204):
+            raise RuntimeError(f"Falha ao remover catalog: {del_resp.status_code} - {del_resp.text}")
+        time.sleep(5)
+
     resp = workspace_api("POST", host, token, "/api/2.1/unity-catalog/catalogs", {
         "name": name,
         "storage_root": storage_root,
         "comment": "Catalog do case marathon",
     })
-    if resp.status_code == 200 or "already exists" in resp.text.lower() or resp.status_code == 409:
-        print(f"Catalog '{name}' criado/verificado")
+    if resp.status_code == 200:
+        print(f"Catalog '{name}' criado")
     else:
         raise RuntimeError(f"Erro ao criar catalog: {resp.status_code} - {resp.text}")
 
@@ -213,6 +218,7 @@ def main():
     token = os.environ.get("DATABRICKS_TOKEN")
     workspace_id = os.environ.get("DATABRICKS_WORKSPACE_ID")
     access_connector_id = os.environ.get("ACCESS_CONNECTOR_ID")
+    catalog_name = os.environ.get("CATALOG_NAME", "marathon")
 
     if not host or not workspace_id or not access_connector_id:
         print("Variaveis obrigatorias: DATABRICKS_HOST, DATABRICKS_WORKSPACE_ID, ACCESS_CONNECTOR_ID")
@@ -267,10 +273,13 @@ def main():
         print("Aguardando propagacao do metastore (60s)...")
         time.sleep(60)
 
-    print("Criando recursos do Unity Catalog...")
+    if not catalog_name:
+        catalog_name = "marathon"
+    print(f"Criando recursos do Unity Catalog (catalogo: {catalog_name})...")
     create_storage_credential(host, token, "marathon-storage-credential", access_connector_id)
     create_external_location(host, token, "marathon-external-location", external_url, "marathon-storage-credential")
-    create_catalog(host, token, "marathon", f"{external_url}catalogs/marathon/")
+    create_catalog(host, token, catalog_name, f"{external_url}catalogs/{catalog_name}/")
+    print(f"CATALOG_NAME={catalog_name}")
 
     print("Unity Catalog configurado com sucesso.")
 

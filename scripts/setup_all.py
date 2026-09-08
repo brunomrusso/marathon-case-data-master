@@ -369,8 +369,8 @@ def step_account_id(state):
         catalogs = resp.json().get("catalogs", [])
         catalog_names = [c.get("name") for c in catalogs]
         print_ok(f"Unity Catalog ativado. Catalogs encontrados: {catalog_names}")
-        if "marathon" in catalog_names:
-            print_ok("Catalog 'marathon' ja existe. Account ID nao necessario.")
+        if "marathon" in catalog_names or catalog_names:
+            print_ok("Unity Catalog ja ativado. Account ID nao necessario.")
         state["outputs"]["unity_catalog_ready"] = True
         save_state(state)
         mark_completed(state, "account_id")
@@ -479,6 +479,9 @@ def step_unity_catalog(state):
         update_env_file(["DATABRICKS_TOKEN"])
         print_ok("PAT salvo no .env")
 
+    catalog_name = os.environ.get("CATALOG_NAME", "marathon")
+    print_ok(f"Catalog name: {catalog_name}")
+
     script = PROJECT_ROOT / "scripts" / "setup_unity_catalog.py"
     if not script.exists():
         raise RuntimeError(f"Script nao encontrado: {script}")
@@ -524,7 +527,7 @@ def step_databricks_secrets(state):
         timeout=30,
     )
     resp.raise_for_status()
-    print_ok("Segredo 'catalog_name' salvo")
+    print_ok("Segredo 'catalog_name' salvo (marathon)")
 
     mark_completed(state, "databricks_secrets")
 
