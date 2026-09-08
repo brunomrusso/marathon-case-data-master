@@ -24,10 +24,32 @@ from pathlib import Path
 
 import requests
 import yaml
+from dotenv import load_dotenv
 
 
 PROJECT_ROOT = Path(__file__).parent.parent
+ENV_FILE = PROJECT_ROOT / ".env"
 CONFIG_FILE = PROJECT_ROOT / "config" / "config.yaml"
+
+if ENV_FILE.exists():
+    load_dotenv(ENV_FILE)
+
+
+def get_aad_token_for_databricks():
+    import subprocess
+    resource = "2ff814a6-3304-4ab8-85cb-cd0e6f879c1d"
+    for cmd in [
+        ["az", "account", "get-access-token", "--resource", resource],
+    ]:
+        for name in ["az", "az.cmd", "az.exe"]:
+            az_path = shutil.which(name)
+            if az_path:
+                cmd[0] = az_path
+                break
+        result = subprocess.run(cmd, text=True, capture_output=True, shell=True)
+        if result.returncode == 0:
+            return json.loads(result.stdout)["accessToken"]
+    raise RuntimeError("Falha ao obter Azure AD token para Databricks")
 
 
 def databricks_api(method, host, token, path, json_data=None, params=None, timeout=30):
@@ -57,8 +79,8 @@ def workspace_api(method, host, token, path, json_data=None, params=None):
     return databricks_api(method, host, token, path, json_data, params)
 
 
-def resource_exists(url, token, name, items_key):
-    resp = databricks_api("GET", url, token, url)
+def resource_exists(host, path, token, name, items_key):
+    resp = databricks_api("GET", host, token, path)
     if resp.status_code != 200:
         return False
     data = resp.json()
@@ -116,7 +138,7 @@ def assign_workspace_to_metastore(account_id, token, workspace_id, metastore_id)
 
 
 def create_storage_credential(host, token, name, access_connector_id):
-    if resource_exists(host, token, name, "storage_credentials"):
+    if resource_exists(host, "/api/2.1/unity-catalog/storage-credentials", token, name, "storage_credentials"):
         print(f"Storage credential '{name}' ja existe")
         return
     resp = workspace_api("POST", host, token, "/api/2.1/unity-catalog/storage-credentials", {
@@ -131,7 +153,7 @@ def create_storage_credential(host, token, name, access_connector_id):
 
 
 def create_external_location(host, token, name, url, credential_name):
-    if resource_exists(host, token, name, "external_locations"):
+    if resource_exists(host, "/api/2.1/unity-catalog/external-locations", token, name, "external_locations"):
         print(f"External location '{name}' ja existe")
         return
     resp = workspace_api("POST", host, token, "/api/2.1/unity-catalog/external-locations", {
@@ -147,7 +169,7 @@ def create_external_location(host, token, name, url, credential_name):
 
 
 def create_catalog(host, token, name, storage_root):
-    if resource_exists(host, token, name, "catalogs"):
+    if resource_exists(host, "/api/2.1/unity-catalog/catalogs", token, name, "catalogs"):
         print(f"Catalog '{name}' ja existe")
         return
     resp = workspace_api("POST", host, token, "/api/2.1/unity-catalog/catalogs", {
@@ -168,8 +190,12 @@ def main():
     workspace_id = os.environ.get("DATABRICKS_WORKSPACE_ID")
     access_connector_id = os.environ.get("ACCESS_CONNECTOR_ID")
 
-    if not all([host, token, workspace_id, access_connector_id]):
-        print("Variaveis obrigatorias: DATABRICKS_HOST, DATABRICKS_TOKEN, DATABRICKS_WORKSPACE_ID, ACCESS_CONNECTOR_ID")
+    if not host or not workspace_id or not access_connector_id:
+        print("Variaveis obrigatorias: DATABRICKS_HOST, DATABRICKS_WORKSPACE_ID, ACCESS_CONNECTOR_ID")
+        sys.exit(1)
+
+    if not token:
+        print("DATABRICKS_TOKEN nao encontrado. Execute setup_all.py para informar o token.")
         sys.exit(1)
 
     workspace_id = int(workspace_id)

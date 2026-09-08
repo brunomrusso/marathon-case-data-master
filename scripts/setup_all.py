@@ -326,11 +326,35 @@ def step_account_id(state):
     print_step(STEPS.index("account_id") + 1, "Verificando Unity Catalog")
 
     host = os.environ["DATABRICKS_HOST"].rstrip("/")
-    token = get_aad_token_for_databricks()
     workspace_id = state["outputs"].get("workspace_id")
 
-    os.environ["DATABRICKS_TOKEN"] = token
-    update_env_file(["DATABRICKS_TOKEN"])
+    # Tenta usar PAT do .env se existir
+    token = os.environ.get("DATABRICKS_TOKEN")
+    if not token or not token.startswith("dapi"):
+        print_info("")
+        print_info("=" * 60)
+        print_info("ACAO MANUAL NECESSARIA: gerar Databricks Personal Access Token")
+        print_info("=" * 60)
+        print_info("Passos:")
+        print_info(f"  1. Abra o workspace: {host}")
+        print_info("  2. Clique no icone do usuario (canto superior direito) > User Settings")
+        print_info("  3. Va em Developer > Access tokens")
+        print_info("  4. Clique em 'Generate new token'")
+        print_info("     - Name: setup-marathon")
+        print_info("     - Lifetime: sem expiracao (recomendado para a demo)")
+        print_info("  5. Cole o token abaixo (comeca com 'dapi...')")
+        print_info("=" * 60)
+        try:
+            webbrowser.open(f"{host}/setting/user?display_access_tokens=true")
+        except Exception:
+            pass
+
+        token = prompt("Cole o Databricks Personal Access Token")
+        if not token.startswith("dapi"):
+            raise RuntimeError("Token invalido. Deve comecar com 'dapi'.")
+        os.environ["DATABRICKS_TOKEN"] = token
+        update_env_file(["DATABRICKS_TOKEN"])
+        print_ok("PAT salvo no .env")
 
     print_info("Verificando se Unity Catalog ja esta ativado...")
     print_info(f"Workspace ID usado: {workspace_id}")
@@ -386,12 +410,8 @@ def step_account_id(state):
 def step_unity_catalog(state):
     print_step(STEPS.index("unity_catalog") + 1, "Configurando Unity Catalog")
 
-    if not os.environ.get("DATABRICKS_TOKEN"):
-        print_info("Gerando Azure AD token para API do Databricks...")
-        token = get_aad_token_for_databricks()
-        os.environ["DATABRICKS_TOKEN"] = token
-        update_env_file(["DATABRICKS_TOKEN"])
-        print_ok("Azure AD token obtido")
+    # Token ja foi validado e coletado no passo account_id
+    print_ok("Token Databricks ja disponivel")
 
     script = PROJECT_ROOT / "scripts" / "setup_unity_catalog.py"
     if not script.exists():
