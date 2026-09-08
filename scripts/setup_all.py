@@ -376,6 +376,29 @@ def step_account_id(state):
         mark_completed(state, "account_id")
         return
 
+    if resp.status_code == 403:
+        print_warn("Token invalido para o Unity Catalog. Gerando um novo PAT...")
+        token = prompt("Cole o Databricks Personal Access Token")
+        if not token.startswith("dapi"):
+            raise RuntimeError("Token invalido. Deve comecar com 'dapi'.")
+        os.environ["DATABRICKS_TOKEN"] = token
+        update_env_file(["DATABRICKS_TOKEN"])
+        print_ok("Novo PAT salvo")
+        # Tenta novamente
+        resp = requests.get(
+            f"{host}/api/2.1/unity-catalog/catalogs",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=30,
+        )
+        if resp.status_code == 200:
+            catalogs = resp.json().get("catalogs", [])
+            catalog_names = [c.get("name") for c in catalogs]
+            print_ok(f"Unity Catalog ativado. Catalogs: {catalog_names}")
+            state["outputs"]["unity_catalog_ready"] = True
+            save_state(state)
+            mark_completed(state, "account_id")
+            return
+
     print_warn("Unity Catalog nao ativado. Precisamos do Account ID.")
     account_id = os.environ.get("DATABRICKS_ACCOUNT_ID")
     if not account_id:
