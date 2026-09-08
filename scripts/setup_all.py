@@ -603,6 +603,127 @@ def step_upload_raw_data(state):
     mark_completed(state, "upload_raw_data")
 
 
+def _test_jobs_token(host, token):
+    resp = requests.get(
+        f"{host}/api/2.1/jobs/list?limit=1",
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=30,
+    )
+    return resp.status_code in (200, 400)  # 400 = bad request mas token valido; 403 = invalido
+
+
+def _get_databricks_user(host, token):
+    resp = requests.get(
+        f"{host}/api/2.0/preview/scim/v2/Me",
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=30,
+    )
+    if resp.status_code == 200:
+        return resp.json().get("userName", "")
+    # Fallback para /api/2.0/current-user se SCIM nao estiver ativado
+    resp = requests.get(
+        f"{host}/api/2.0/current-user",
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=30,
+    )
+    if resp.status_code == 200:
+        data = resp.json()
+        return data.get("userName") or data.get("user_name", "")
+    return ""
+
+
+def _ensure_databricks_repo(host, token, state):
+    """Cria Git credential e Databricks Repo automaticamente se nao existir."""
+    repo_path = os.environ.get("DATABRICKS_REPO_PATH")
+    if repo_path:
+        print_ok(f"Usando DATABRICKS_REPO_PATH do .env: {repo_path}")
+        return repo_path
+
+    github_token = os.environ.get("GITHUB_TOKEN")
+    github_username = os.environ.get("GITHUB_USERNAME")
+    if not github_token or not github_username:
+        print_info("")
+        print_info("=" * 60)
+        print_info("ACAO MANUAL NECESSARIA: configurar Databricks Repo")
+        print_info("=" * 60)
+        print_info("O setup pode criar o Databricks Repo automaticamente")
+        print_info("usando um GitHub Personal Access Token.")
+        print_info("")
+        print_info("Passos:")
+        print_info("  1. Va em https://github.com/settings/tokens")
+        print_info("  2. Gere um token com scope 'repo'")
+        print_info("  3. Cole o token abaixo")
+        print_info("  4. Informe seu usuario do GitHub")
+        print_info("=" * 60)
+
+        github_token = prompt("Cole o GitHub Personal Access Token")
+        github_username = prompt("Informe seu usuario do GitHub")
+        os.environ["GITHUB_TOKEN"] = github_token
+        os.environ["GITHUB_USERNAME"] = github_username
+        update_env_file(["GITHUB_TOKEN", "GITHUB_USERNAME"])
+
+    repo_url = "https://github.com/brunomrusso/marathon-case-data-master"
+    print_info("Criando Git credential no Databricks...")
+    resp = requests.post(
+        f"{host}/api/2.0/git-credentials",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "personal_access_token": github_token,
+            "git_username": github_username,
+            "git_provider": "gitHub",
+        },
+        timeout=30,
+    )
+    if resp.status_code == 200:
+        print_ok("Git credential criada")
+    elif "already" in resp.text.lower() or resp.status_code == 409:
+        print_ok("Git credential ja existia")
+    else:
+        raise RuntimeError(f"Falha ao criar Git credential: {resp.status_code} - {resp.text}")
+
+    print_info("Descobrindo usuario do Databricks...")
+    databricks_user = _get_databricks_user(host, token)
+    if not databricks_user:
+        databricks_user = github_username
+    print_ok(f"Usuario Databricks: {databricks_user}")
+
+    print_info("Criando Databricks Repo...")
+    repo_path = f"/Repos/{databricks_user}/marathon-case-data-master"
+    resp = requests.post(
+        f"{host}/api/2.0/repos",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "url": repo_url,
+            "provider": "gitHub",
+            "path": repo_path,
+        },
+        timeout=30,
+    )
+    if resp.status_code == 200:
+        data = resp.json()
+        repo_path = data.get("path", repo_path)
+        print_ok(f"Repo criado: {repo_path}")
+    elif resp.status_code == 409:
+        # Ja existe: lista para achar o path
+        resp = requests.get(
+            f"{host}/api/2.0/repos",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=30,
+        )
+        repos = resp.json() if resp.status_code == 200 else {}
+        for r in repos.get("repos", []):
+            if r.get("url") == repo_url:
+                repo_path = r.get("path", repo_path)
+                break
+        print_ok(f"Repo ja existia: {repo_path}")
+    else:
+        raise RuntimeError(f"Falha ao criar Repo: {resp.status_code} - {resp.text}")
+
+    os.environ["DATABRICKS_REPO_PATH"] = repo_path
+    update_env_file(["DATABRICKS_REPO_PATH"])
+    return repo_path
+
+
 def step_create_workflow(state):
     print_step(STEPS.index("create_workflow") + 1, "Criando Databricks Workflow")
 
@@ -611,7 +732,18 @@ def step_create_workflow(state):
     os.environ["DATABRICKS_HOST"] = host
     print_ok(f"Workspace URL: {host}")
 
-    repo_path = os.environ.get("DATABRICKS_REPO_PATH")
+    token = os.environ.get("DATABRICKS_TOKEN")
+    if not token or not _test_jobs_token(host, token):
+        print_warn("O token atual nao tem acesso a API de Jobs.")
+        print_info("Gere um novo token NO WORKSPACE ACIMA e cole abaixo.")
+        token = prompt("Cole o Databricks Personal Access Token")
+        if not token.startswith("dapi"):
+            raise RuntimeError("Token invalido. Deve comecar com 'dapi'.")
+        os.environ["DATABRICKS_TOKEN"] = token
+        update_env_file(["DATABRICKS_TOKEN"])
+        print_ok("Novo PAT salvo")
+
+    repo_path = _ensure_databricks_repo(host, token, state)
     if not repo_path:
         print_warn("DATABRICKS_REPO_PATH nao definido no .env")
         print_info("O workflow precisa apontar para notebooks em um Databricks Repo.")
