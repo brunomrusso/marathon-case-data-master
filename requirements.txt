@@ -6,4 +6,10 @@ pandas>=2.0.0
 azure-identity>=1.15.0
 azure-storage-blob>=12.19.0
 azure-mgmt-resource>=23.0.0
+
+# Dashboard
+streamlit>=1.30.0
+databricks-sql-connector>=3.0.0
+plotly>=5.18.0
+
 # Terraform CLI deve ser instalado separadamente: https://developer.hashicorp.com/terraform/install

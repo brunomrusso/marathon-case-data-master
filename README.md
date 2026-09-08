@@ -249,11 +249,42 @@ Todas as tabelas Gold ficam em `marathon.gold.*` e são o ponto de consumo do da
 | `gold.age_gender_profile` | Perfil demográfico dos finishers: contagem e tempo médio por grupo etário e gênero. Permite identificar o perfil dominante em cada prova. |
 | `gold.weather_impact` | Correlação entre condições climáticas (temperatura, precipitação, vento) e desempenho médio dos atletas. Disponível somente quando `silver.marathons_with_weather` está populada. |
 
-### 13. Conectar o Dashboard
+### 13. Dashboard
 
-As tabelas Gold estão prontas em `gold.*`. Você pode conectar:
-- **Power BI** usando o conector do Databricks.
-- **Streamlit** conectando via JDBC/ODBC ou exportando as tabelas Gold para CSV/Parquet.
+O projeto inclui um dashboard Streamlit pronto em `dashboard/app.py`.
+
+#### 13.1 Criar o Databricks SQL Warehouse
+
+1. No workspace, va em **SQL > SQL Warehouses**.
+2. Clique em **Create SQL Warehouse**.
+3. Escolha o tamanho (o menor `2X-Small` e suficiente para a demo).
+4. Copie o **HTTP Path** (esta no campo "Connection details").
+
+#### 13.2 Configurar o .env
+
+No arquivo `.env` da raiz do projeto, adicione:
+
+```
+DATABRICKS_HTTP_PATH=/sql/1.0/warehouses/xxxxxxxxxxxxxxxx
+```
+
+#### 13.3 Executar o dashboard
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+streamlit run dashboard/app.py
+```
+
+O dashboard exibe:
+- KPIs (conclusoes, paises, edicoes)
+- Conclusoes por ano
+- Top paises
+- Distribuicao de tempos
+- Comparacao entre maratonas
+- Perfil demografico
+- Impacto do clima
 
 ## V. Estrutura do Repositório
 
