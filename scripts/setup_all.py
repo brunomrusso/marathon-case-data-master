@@ -407,11 +407,47 @@ def step_account_id(state):
     mark_completed(state, "account_id")
 
 
+def _test_uc_token(host, token):
+    resp = requests.get(
+        f"{host}/api/2.1/unity-catalog/catalogs",
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=30,
+    )
+    return resp.status_code == 200
+
+
 def step_unity_catalog(state):
     print_step(STEPS.index("unity_catalog") + 1, "Configurando Unity Catalog")
 
-    # Token ja foi validado e coletado no passo account_id
-    print_ok("Token Databricks ja disponivel")
+    host = os.environ["DATABRICKS_HOST"].rstrip("/")
+    token = os.environ.get("DATABRICKS_TOKEN")
+
+    if not token or not _test_uc_token(host, token):
+        print_warn("Token do .env invalido ou sem acesso ao Unity Catalog.")
+        print_info("")
+        print_info("=" * 60)
+        print_info("ACAO MANUAL NECESSARIA: gerar Databricks Personal Access Token")
+        print_info("=" * 60)
+        print_info("Passos:")
+        print_info(f"  1. Abra o workspace: {host}")
+        print_info("  2. Clique no icone do usuario (canto superior direito) > User Settings")
+        print_info("  3. Va em Developer > Access tokens")
+        print_info("  4. Clique em 'Generate new token'")
+        print_info("     - Name: setup-marathon")
+        print_info("     - Lifetime: sem expiracao (recomendado para a demo)")
+        print_info("  5. Cole o token abaixo (comeca com 'dapi...')")
+        print_info("=" * 60)
+        try:
+            webbrowser.open(f"{host}/setting/user?display_access_tokens=true")
+        except Exception:
+            pass
+
+        token = prompt("Cole o Databricks Personal Access Token")
+        if not token.startswith("dapi"):
+            raise RuntimeError("Token invalido. Deve comecar com 'dapi'.")
+        os.environ["DATABRICKS_TOKEN"] = token
+        update_env_file(["DATABRICKS_TOKEN"])
+        print_ok("PAT salvo no .env")
 
     script = PROJECT_ROOT / "scripts" / "setup_unity_catalog.py"
     if not script.exists():
