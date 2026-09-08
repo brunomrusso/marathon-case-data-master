@@ -138,17 +138,16 @@ def assign_workspace_to_metastore(account_id, token, workspace_id, metastore_id)
 
 
 def create_storage_credential(host, token, name, access_connector_id):
+    print(f"Garantindo que a storage credential '{name}' esteja correta...")
+    # Sempre remove a credential antiga e a external location dependente para evitar estado corrompido
+    resp_ext = workspace_api("GET", host, token, "/api/2.1/unity-catalog/external-locations/marathon-external-location")
+    if resp_ext.status_code == 200:
+        print("Removendo external location dependente...")
+        workspace_api("DELETE", host, token, "/api/2.1/unity-catalog/external-locations/marathon-external-location")
+
     resp = workspace_api("GET", host, token, f"/api/2.1/unity-catalog/storage-credentials/{name}")
     if resp.status_code == 200:
-        existing = resp.json()
-        existing_connector = existing.get("azure_managed_identity", {}).get("access_connector_id")
-        if existing_connector == access_connector_id:
-            print(f"Storage credential '{name}' ja existe com o mesmo access connector")
-            return
-        print(f"Storage credential '{name}' existe mas com access connector diferente ({existing_connector}). Recriando...")
-        # Remove a external location dependente, senao nao consegue deletar o credential
-        workspace_api("DELETE", host, token, "/api/2.1/unity-catalog/external-locations/marathon-external-location")
-        # Forca a delecao do credential antigo para recriar com o novo
+        print(f"Removendo storage credential '{name}' antiga...")
         del_resp = workspace_api("DELETE", host, token, f"/api/2.1/unity-catalog/storage-credentials/{name}")
         if del_resp.status_code not in (200, 204):
             print(f"Aviso: nao foi possivel deletar storage credential antiga: {del_resp.status_code} - {del_resp.text}")
@@ -158,24 +157,27 @@ def create_storage_credential(host, token, name, access_connector_id):
         "azure_managed_identity": {"access_connector_id": access_connector_id},
         "comment": "Credencial para acesso ao ADLS do case marathon",
     })
-    if resp.status_code == 200 or "already exists" in resp.text.lower() or resp.status_code == 409:
-        print(f"Storage credential '{name}' criada/verificada")
+    if resp.status_code == 200:
+        print(f"Storage credential '{name}' criada")
     else:
         raise RuntimeError(f"Erro ao criar storage credential: {resp.status_code} - {resp.text}")
 
 
 def create_external_location(host, token, name, url, credential_name):
-    if resource_exists(host, "/api/2.1/unity-catalog/external-locations", token, name, "external_locations"):
-        print(f"External location '{name}' ja existe")
-        return
+    # Remove a external location se ja existir para garantir que use a storage credential correta
+    resp = workspace_api("GET", host, token, f"/api/2.1/unity-catalog/external-locations/{name}")
+    if resp.status_code == 200:
+        print(f"Removendo external location '{name}' antiga...")
+        workspace_api("DELETE", host, token, f"/api/2.1/unity-catalog/external-locations/{name}")
+
     resp = workspace_api("POST", host, token, "/api/2.1/unity-catalog/external-locations", {
         "name": name,
         "url": url,
         "credential_name": credential_name,
         "comment": "External location para o data lake do case marathon",
     })
-    if resp.status_code == 200 or "already exists" in resp.text.lower() or resp.status_code == 409:
-        print(f"External location '{name}' criada/verificada")
+    if resp.status_code == 200:
+        print(f"External location '{name}' criada")
     else:
         raise RuntimeError(f"Erro ao criar external location: {resp.status_code} - {resp.text}")
 

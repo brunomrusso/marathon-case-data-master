@@ -28,3 +28,9 @@ data/gold/*
 
 # Estado local do setup unificado
 .setup_state.json
+
+# Terraform
+*.tfstate
+*.tfstate.*
+**/.terraform/
+**/.terraform.lock.hcl
