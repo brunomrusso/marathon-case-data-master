@@ -138,9 +138,21 @@ def assign_workspace_to_metastore(account_id, token, workspace_id, metastore_id)
 
 
 def create_storage_credential(host, token, name, access_connector_id):
-    if resource_exists(host, "/api/2.1/unity-catalog/storage-credentials", token, name, "storage_credentials"):
-        print(f"Storage credential '{name}' ja existe")
-        return
+    resp = workspace_api("GET", host, token, f"/api/2.1/unity-catalog/storage-credentials/{name}")
+    if resp.status_code == 200:
+        existing = resp.json()
+        existing_connector = existing.get("azure_managed_identity", {}).get("access_connector_id")
+        if existing_connector == access_connector_id:
+            print(f"Storage credential '{name}' ja existe com o mesmo access connector")
+            return
+        print(f"Storage credential '{name}' existe mas com access connector diferente ({existing_connector}). Recriando...")
+        # Remove a external location dependente, senao nao consegue deletar o credential
+        workspace_api("DELETE", host, token, "/api/2.1/unity-catalog/external-locations/marathon-external-location")
+        # Forca a delecao do credential antigo para recriar com o novo
+        del_resp = workspace_api("DELETE", host, token, f"/api/2.1/unity-catalog/storage-credentials/{name}")
+        if del_resp.status_code not in (200, 204):
+            print(f"Aviso: nao foi possivel deletar storage credential antiga: {del_resp.status_code} - {del_resp.text}")
+
     resp = workspace_api("POST", host, token, "/api/2.1/unity-catalog/storage-credentials", {
         "name": name,
         "azure_managed_identity": {"access_connector_id": access_connector_id},
