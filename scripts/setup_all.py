@@ -635,6 +635,17 @@ def _test_jobs_token(host, token):
     return resp.status_code in (200, 400)  # 400 = bad request mas token valido; 403 = invalido
 
 
+def _repo_notebook_exists(host, token, notebook_path):
+    """Verifica se um notebook existe no workspace (Workspace API v2)."""
+    resp = requests.get(
+        f"{host}/api/2.0/workspace/get-status",
+        headers={"Authorization": f"Bearer {token}"},
+        params={"path": notebook_path},
+        timeout=30,
+    )
+    return resp.status_code == 200
+
+
 def _get_databricks_user(host, token):
     resp = requests.get(
         f"{host}/api/2.0/preview/scim/v2/Me",
@@ -740,11 +751,34 @@ def _ensure_databricks_repo(host, token, state):
                 break
         print_ok(f"Repo ja existia: {repo_path}")
     else:
-        raise RuntimeError(f"Falha ao criar Repo: {resp.status_code} - {resp.text}")
+        print_warn(f"Falha ao criar Repo via API: {resp.status_code} - {resp.text}")
+        print_info("")
+        print_info("=" * 60)
+        print_info("ACAO MANUAL NECESSARIA: vincular o repositorio do GitHub")
+        print_info("=" * 60)
+        print_info("Passos:")
+        print_info(f"  1. No Databricks, va em Workspace > Repos")
+        print_info(f"  2. Clique em 'Add Repo'")
+        print_info(f"  3. Cole a URL: {repo_url}")
+        print_info(f"  4. Vincule sua conta do GitHub")
+        print_info(f"  5. Aguarde a sincronizacao (os notebooks devem aparecer)")
+        print_info(f"  6. Cole o caminho do repo abaixo")
+        print_info("=" * 60)
+        try:
+            webbrowser.open(f"{host}/browse/folders/0")
+        except Exception:
+            pass
+        repo_path = prompt("Cole o caminho do Databricks Repo")
 
-    os.environ["DATABRICKS_REPO_PATH"] = repo_path
+    # Verifica se o path termina com /Workspace no workflow
+    workflow_path = f"/Workspace{repo_path}"
+    if not _repo_notebook_exists(host, token, f"{workflow_path}/notebooks/00_bronze_orchestrator"):
+        print_warn("Notebooks nao encontrados no repo. Verifique se a sincronizacao com o GitHub foi concluida.")
+        print_info("Caminho do repo usado no workflow:", workflow_path)
+
+    os.environ["DATABRICKS_REPO_PATH"] = workflow_path
     update_env_file(["DATABRICKS_REPO_PATH"])
-    return repo_path
+    return workflow_path
 
 
 def step_create_workflow(state):

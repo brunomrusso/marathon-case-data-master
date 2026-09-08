@@ -70,9 +70,11 @@ Antes de começar, você precisa de:
 - Permissões para criar Resource Groups, Storage Accounts e Databricks Workspaces.
 - **Python 3.10+** instalado localmente.
 - **Azure CLI** instalado e logado (`az login`).
-- **Terraform** instalado (CLI): https://developer.hashicorp.com/terraform/install
+- **Terraform** instalado e no `PATH`: https://developer.hashicorp.com/terraform/install
+  - No Windows, adicione a pasta do `terraform.exe` ao `PATH` (ou use `$env:Path += ";<caminho>"` no PowerShell).
 - Acesso aos datasets listados acima.
-- Permissão para criar o metastore do Unity Catalog (Account Admin ou Metastore Admin na Databricks; o setup guia a obtencao do Account ID).
+- Uma conta **GitHub** e um **Personal Access Token** com escopo `repo` (para criar o Databricks Repo automaticamente).
+- Permissão de **Workspace Admin** no Databricks workspace que será criado.
 
 ### 2. Clonar e preparar o ambiente
 
@@ -113,11 +115,34 @@ cp .env.example .env
 Edite o `.env` e preencha pelo menos:
 
 ```env
-ALERT_EMAIL=seu-email@exemplo.com                    # opcional
-DATABRICKS_REPO_PATH=/Workspace/Repos/<usuario>/marathon-case-data-master
+GITHUB_TOKEN=ghp_...                                     # token com scope 'repo'
+GITHUB_USERNAME=seu-usuario-github                       # ex: brunomrusso
+ALERT_EMAIL=seu-email@exemplo.com                        # opcional
 ```
 
-> `DATABRICKS_ACCOUNT_ID` sera solicitado durante o setup. Nao precisa preencher antecipadamente.
+> `DATABRICKS_TOKEN` sera solicitado durante o setup. Nao precisa preencher antecipadamente.
+
+#### Gerar os tokens
+
+**1) GitHub Personal Access Token (PAT)**
+
+- Acesse https://github.com/settings/tokens
+- Clique em **Generate new token (classic)**
+- Marque o escopo **repo**
+- Salve o token e cole no `.env` como `GITHUB_TOKEN`
+
+**2) Databricks Personal Access Token (PAT)**
+
+O setup pede esse token no terminal. Para gerar:
+
+- Acesse o workspace do Databricks (`https://adb-...azuredatabricks.net`)
+- Clique no ícone do usuário > **User Settings**
+- Vá em **Developer > Access tokens**
+- Clique em **Generate new token**
+- Nome: `setup-marathon`
+- Lifetime: **No lifetime** (ou o maior possível)
+- Scope: **All APIs**
+- Cole o token no terminal quando o setup pedir
 
 Execute o setup unico:
 
@@ -125,19 +150,35 @@ Execute o setup unico:
 python scripts/setup_all.py
 ```
 
-Esse script orquestra todo o resto, com **apenas uma acao manual**: colar o Account ID.
+Esse script orquestra todo o resto, com **duas acoes manuais**:
+
+1. Gerar e colar o **Databricks PAT**
+2. Confirmar/vincular o **Databricks Repo do GitHub** (se a API automática não sincronizar)
+
+Fluxo do script:
 
 1. Checa prerequisitos (Python, Azure CLI, Terraform)
 2. Garante login no Azure
 3. Cria a infraestrutura Azure via Terraform (resource group, storage, workspace, access connector, key vault)
 4. Atualiza `config/config.yaml` com os recursos criados
-5. Gera Azure AD token para a API do Databricks
-6. **Abre o workspace no navegador e pede o Databricks Account ID** (copiado da URL do Account Console)
-7. Cria/escolhe o metastore, atribui ao workspace e cria storage credential, external location e catalog
-8. Salva secrets no Databricks
-9. Registra EventGrid provider e atribui roles ao Access Connector
-10. Sobe os CSVs para `raw/`
+5. Pede o **Databricks PAT** e verifica o Unity Catalog
+6. Cria storage credential, external location e catalog no Unity Catalog
+7. Salva secrets no Databricks
+8. Registra EventGrid provider e atribui roles ao Access Connector
+9. Sobe os CSVs para `raw/`
+10. Cria a Git credential e o Databricks Repo a partir do GitHub
 11. Cria o workflow com File Arrival Trigger
+
+#### Atenção ao vinculo do GitHub
+
+O setup tenta criar o Databricks Repo automaticamente. Se isso falhar, você verá uma mensagem. Nesse caso:
+
+1. No Databricks, vá em **Workspace > Repos**
+2. Clique em **Add Repo**
+3. Cole a URL: `https://github.com/brunomrusso/marathon-case-data-master`
+4. Vincule sua conta do GitHub
+5. Aguarde o repo sincronizar (os notebooks devem aparecer)
+6. Cole o caminho do repo no terminal quando o setup pedir
 
 Se falhar em qualquer passo, basta corrigir o problema e rodar novamente:
 
@@ -147,7 +188,7 @@ python scripts/setup_all.py
 
 O script retoma de onde parou, pois salva o progresso em `.setup_state.json`.
 
-Para recomecar do zero:
+Para recomecar do zero (não apaga a infraestrutura, apenas o estado do setup):
 
 ```powershell
 python scripts/setup_all.py --reset
@@ -277,9 +318,8 @@ marathon-case-data-master/
 - **Setup unificado:** novo `scripts/setup_all.py` executa todo o provisionamento e configuracao em um unico comando, com persistencia de estado para retomada.
 - **Infraestrutura como Terraform:** pasta `infrastructure/terraform/` cria Azure resources e Databricks workspace de forma automatizada.
 - **Configuracao do Unity Catalog via script:** `scripts/setup_unity_catalog.py` cria/escolhe metastore, atribui o workspace e cria storage credential, external location e catalog.
-- **Sem token manual:** o setup usa Azure AD token do CLI, eliminando a geracao manual de Databricks Personal Access Token.
-- **Unica acao manual:** colar o Databricks Account ID (obtido da URL do Account Console) no terminal durante o setup.
-- **Arquivo `.env`:** centraliza configuracoes de ambiente (Databricks account ID, email de alerta, repo path).
+- **Acoes manuais minimas:** geração do Databricks PAT e vinculo do Databricks Repo (com fallback manual documentado).
+- **Arquivo `.env`:** centraliza configuracoes de ambiente (Databricks token, GitHub token, email de alerta, repo path).
 - **Versao Python do enable_file_events:** nao depende mais exclusivamente do PowerShell.
 - **Bicep mantido como alternativa:** arquivos `infrastructure/main.bicep` e `resources.bicep` continuam disponiveis, mas nao automatizam o metastore.
 
