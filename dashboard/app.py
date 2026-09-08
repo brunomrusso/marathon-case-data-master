@@ -10,26 +10,7 @@ from dotenv import load_dotenv
 PROJECT_ROOT = Path(__file__).parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
 
-st.set_page_config(page_title="Marathon Majors", layout="wide")
 
-st.title("World Marathon Majors — Dashboard")
-st.markdown("Analise de resultados das maratonas de Chicago, Londres, Nova York e Berlin.")
-
-with st.sidebar:
-    with st.expander("Diagnostico de conexao"):
-        host, token, http_path = get_connection_params()
-        st.write(f"Host: {host[:40]}..." if host else "Host nao configurado")
-        st.write(f"Token: {token[:8]}..." if token else "Token nao configurado")
-        st.write(f"HTTP path: {http_path}")
-        if st.button("Testar conexao"):
-            try:
-                test_connection()
-                st.success("Conexao OK!")
-            except Exception as e:
-                st.error(f"Falha na conexao: {e}")
-
-
-@st.cache_data(ttl=600)
 def get_connection_params():
     """Limpa e retorna os parametros de conexao."""
     host = os.environ.get("DATABRICKS_HOST", "").strip()
@@ -61,6 +42,25 @@ def run_query(query):
             cur.execute(query)
             table = cur.fetchall_arrow_table()
             return table.to_pandas()
+
+
+st.set_page_config(page_title="Marathon Majors", layout="wide")
+
+st.title("World Marathon Majors — Dashboard")
+st.markdown("Analise de resultados das maratonas de Chicago, Londres, Nova York e Berlin.")
+
+with st.sidebar:
+    with st.expander("Diagnostico de conexao"):
+        host, token, http_path = get_connection_params()
+        st.write(f"Host: {host[:40]}..." if host else "Host nao configurado")
+        st.write(f"Token: {token[:8]}..." if token else "Token nao configurado")
+        st.write(f"HTTP path: {http_path}")
+        if st.button("Testar conexao"):
+            try:
+                test_connection()
+                st.success("Conexao OK!")
+            except Exception as e:
+                st.error(f"Falha na conexao: {e}")
 
 
 # Sidebar com filtros
