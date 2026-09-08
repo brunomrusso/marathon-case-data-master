@@ -574,6 +574,26 @@ def step_enable_file_events(state):
 def step_upload_raw_data(state):
     print_step(STEPS.index("upload_raw_data") + 1, "Subindo CSVs para a camada raw")
 
+    outputs = state["outputs"]
+    storage = outputs.get("storage_account_name")
+    rg = outputs.get("resource_group_name")
+
+    print_info("Obtendo storage access key atualizada...")
+    storage_key = run_command(
+        [
+            "az", "storage", "account", "keys", "list",
+            "--account-name", storage,
+            "--resource-group", rg,
+            "--query", "[0].value",
+            "-o", "tsv",
+        ],
+        capture=True,
+        check=True,
+    )
+    os.environ["STORAGE_ACCESS_KEY"] = storage_key
+    update_env_file(["STORAGE_ACCESS_KEY"])
+    print_ok("Storage access key atualizada no .env")
+
     script = PROJECT_ROOT / "scripts" / "upload_raw_data.py"
     if not script.exists():
         raise RuntimeError(f"Script nao encontrado: {script}")
