@@ -15,13 +15,42 @@ st.set_page_config(page_title="Marathon Majors", layout="wide")
 st.title("World Marathon Majors — Dashboard")
 st.markdown("Analise de resultados das maratonas de Chicago, Londres, Nova York e Berlin.")
 
+with st.sidebar:
+    with st.expander("Diagnostico de conexao"):
+        host, token, http_path = get_connection_params()
+        st.write(f"Host: {host[:40]}..." if host else "Host nao configurado")
+        st.write(f"Token: {token[:8]}..." if token else "Token nao configurado")
+        st.write(f"HTTP path: {http_path}")
+        if st.button("Testar conexao"):
+            try:
+                test_connection()
+                st.success("Conexao OK!")
+            except Exception as e:
+                st.error(f"Falha na conexao: {e}")
+
 
 @st.cache_data(ttl=600)
+def get_connection_params():
+    """Limpa e retorna os parametros de conexao."""
+    host = os.environ.get("DATABRICKS_HOST", "").strip()
+    host = host.removeprefix("https://").removeprefix("http://").rstrip("/")
+    token = os.environ.get("DATABRICKS_TOKEN", "").strip()
+    http_path = os.environ.get("DATABRICKS_HTTP_PATH", "").strip()
+    return host, token, http_path
+
+
+def test_connection():
+    """Testa a conexao com uma query simples."""
+    host, token, http_path = get_connection_params()
+    with sql.connect(server_hostname=host, http_path=http_path, access_token=token) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1")
+            return cur.fetchone()
+
+
 def run_query(query):
     """Executa uma consulta no Databricks SQL e retorna um DataFrame pandas."""
-    host = os.environ.get("DATABRICKS_HOST", "").lstrip("https://").rstrip("/")
-    token = os.environ.get("DATABRICKS_TOKEN", "")
-    http_path = os.environ.get("DATABRICKS_HTTP_PATH", "")
+    host, token, http_path = get_connection_params()
 
     if not all([host, token, http_path]):
         st.error("Preencha DATABRICKS_HOST, DATABRICKS_TOKEN e DATABRICKS_HTTP_PATH no .env")
