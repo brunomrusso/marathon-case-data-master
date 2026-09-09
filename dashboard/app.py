@@ -6,7 +6,7 @@ import streamlit as st
 from databricks import sql
 from dotenv import load_dotenv
 
-# Carrega variaveis do .env na raiz do projeto
+# Carrega variaveis do .env na raiz do projeto e sobrescreve as ja carregadas
 PROJECT_ROOT = Path(__file__).parent.parent
 load_dotenv(PROJECT_ROOT / ".env", override=True)
 
@@ -68,7 +68,7 @@ with st.sidebar:
 with st.sidebar:
     st.header("Filtros")
     try:
-        years_df = run_query("SELECT DISTINCT year FROM marathon.gold.marathon_comparison ORDER BY year")
+        years_df = run_query("SELECT DISTINCT year FROM gold.finishers_by_year ORDER BY year")
         available_years = sorted(years_df["year"].dropna().astype(int).tolist())
     except Exception as e:
         st.warning(f"Nao foi possivel carregar anos: {e}")
@@ -80,13 +80,18 @@ with st.sidebar:
 
 # KPIs
 try:
-    kpi = run_query("SELECT * FROM marathon.gold.kpi_summary LIMIT 1")
+    kpi = run_query("""
+        SELECT 
+            SUM(total_athletes) AS total_finishers,
+            COUNT(DISTINCT year) AS total_editions,
+            COUNT(DISTINCT source) AS total_marathons
+        FROM gold.kpi_summary
+    """)
     cols = st.columns(4)
-    cols[0].metric("Conclusoes", int(kpi["total_finishers"].iloc[0]))
-    cols[1].metric("Paises", int(kpi["total_countries"].iloc[0]))
-    cols[2].metric("Edicoes", int(kpi["total_editions"].iloc[0]))
-    if "avg_finish_time" in kpi.columns:
-        cols[3].metric("Tempo medio", str(kpi["avg_finish_time"].iloc[0]))
+    if not kpi.empty:
+        cols[0].metric("Conclusoes", int(kpi["total_finishers"].iloc[0] or 0))
+        cols[1].metric("Edicoes", int(kpi["total_editions"].iloc[0] or 0))
+        cols[2].metric("Maratonas", int(kpi["total_marathons"].iloc[0] or 0))
 except Exception as e:
     st.warning(f"Nao foi possivel carregar KPIs: {e}")
 
@@ -96,75 +101,118 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs(["Visao Geral", "Paises", "Tempos", "Demo
 with tab1:
     st.subheader("Conclusoes por ano")
     try:
-        finishers = run_query("SELECT year, total_finishers FROM marathon.gold.finishers_by_year ORDER BY year")
+        finishers = run_query("""
+            SELECT year, SUM(total_finishers) AS total_finishers
+            FROM gold.finishers_by_year
+            GROUP BY year
+            ORDER BY year
+        """)
         if selected_years:
             finishers = finishers[finishers["year"].isin(selected_years)]
+        if selected_marathon != "Todas":
+            finishers = finishers[finishers["source"] == selected_marathon.lower()]
         st.line_chart(finishers.set_index("year"))
     except Exception as e:
         st.error(f"Erro ao carregar conclusoes: {e}")
 
+    st.subheader("Comparacao entre maratonas")
+    try:
+        comparison = run_query("""
+            SELECT source, year, avg_finish_time_sec
+            FROM gold.kpi_summary
+            ORDER BY year, source
+        """)
+        if selected_years:
+            comparison = comparison[comparison["year"].isin(selected_years)]
+        if selected_marathon != "Todas":
+            comparison = comparison[comparison["source"] == selected_marathon.lower()]
+        if not comparison.empty:
+            pivot = comparison.pivot_table(index="year", columns="source", values="avg_finish_time_sec", aggfunc="mean")
+            st.line_chart(pivot)
+    except Exception as e:
+        st.error(f"Erro ao carregar comparacao: {e}")
+
 with tab2:
     st.subheader("Top paises")
     try:
-        top = run_query("SELECT country, total_finishers FROM marathon.gold.top_countries ORDER BY total_finishers DESC LIMIT 20")
+        top = run_query("""
+            SELECT country, SUM(total_athletes) AS total_athletes
+            FROM gold.top_countries
+            GROUP BY country
+            ORDER BY total_athletes DESC
+            LIMIT 20
+        """)
         st.bar_chart(top.set_index("country"))
     except Exception as e:
         st.error(f"Erro ao carregar paises: {e}")
 
     st.subheader("Atletas por pais")
     try:
-        athletes = run_query(
-            "SELECT country, COUNT(*) as total FROM marathon.gold.athletes_by_country GROUP BY country ORDER BY total DESC LIMIT 20"
-        )
+        athletes = run_query("""
+            SELECT country, total_athletes, avg_finish_time_sec
+            FROM gold.athletes_by_country
+            ORDER BY total_athletes DESC
+            LIMIT 20
+        """)
         st.dataframe(athletes, use_container_width=True)
     except Exception as e:
         st.error(f"Erro ao carregar atletas: {e}")
 
 with tab3:
-    st.subheader("Distribuicao de tempos")
+    st.subheader("Tempos por faixa etaria e genero")
     try:
-        times = run_query("SELECT finish_time_seconds FROM marathon.gold.times_distribution")
-        bins = pd.cut(times["finish_time_seconds"], bins=30).value_counts().sort_index()
-        bin_df = pd.DataFrame({"intervalo": [f"{int(i.left)}-{int(i.right)}" for i in bins.index], "atletas": bins.values})
-        st.bar_chart(bin_df.set_index("intervalo"))
+        times = run_query("""
+            SELECT age_group, gender, AVG(mean) AS mean_time
+            FROM gold.times_distribution
+            GROUP BY age_group, gender
+            ORDER BY age_group
+        """)
+        if not times.empty:
+            pivot = times.pivot_table(index="age_group", columns="gender", values="mean_time", aggfunc="mean")
+            st.bar_chart(pivot)
     except Exception as e:
         st.error(f"Erro ao carregar tempos: {e}")
 
-    st.subheader("Comparacao entre maratonas")
+    st.subheader("Estatisticas de tempos")
     try:
-        comparison = run_query("SELECT * FROM marathon.gold.marathon_comparison")
-        if selected_years:
-            comparison = comparison[comparison["year"].isin(selected_years)]
-        if selected_marathon != "Todas":
-            comparison = comparison[comparison["marathon"] == selected_marathon]
-        if "marathon" in comparison.columns and "avg_finish_time_seconds" in comparison.columns:
-            pivot = comparison.pivot_table(index="year", columns="marathon", values="avg_finish_time_seconds", aggfunc="mean")
-            st.bar_chart(pivot)
-        else:
-            st.dataframe(comparison, use_container_width=True)
+        stats = run_query("""
+            SELECT age_group, gender, AVG(min) AS minimo, AVG(mean) AS media, AVG(median) AS mediana, AVG(max) AS maximo
+            FROM gold.times_distribution
+            GROUP BY age_group, gender
+            ORDER BY age_group
+        """)
+        st.dataframe(stats, use_container_width=True)
     except Exception as e:
-        st.error(f"Erro ao carregar comparacao: {e}")
+        st.error(f"Erro ao carregar estatisticas: {e}")
 
 with tab4:
     st.subheader("Perfil de idade e genero")
     try:
-        profile = run_query("SELECT * FROM marathon.gold.age_gender_profile")
-        if selected_marathon != "Todas":
-            profile = profile[profile["marathon"] == selected_marathon]
-        st.dataframe(profile, use_container_width=True)
-        if "age_group" in profile.columns and "finishers" in profile.columns:
-            st.bar_chart(profile.set_index("age_group")[["finishers"]])
+        profile = run_query("""
+            SELECT age_group, gender, SUM(total_athletes) AS total_athletes
+            FROM gold.age_gender_profile
+            GROUP BY age_group, gender
+            ORDER BY age_group
+        """)
+        if not profile.empty:
+            pivot = profile.pivot_table(index="age_group", columns="gender", values="total_athletes", aggfunc="sum")
+            st.bar_chart(pivot)
+            st.dataframe(profile, use_container_width=True)
     except Exception as e:
         st.error(f"Erro ao carregar demografia: {e}")
 
 with tab5:
     st.subheader("Impacto do clima")
     try:
-        weather = run_query("SELECT * FROM marathon.gold.weather_impact")
-        if selected_marathon != "Todas":
-            weather = weather[weather["marathon"] == selected_marathon]
-        st.dataframe(weather, use_container_width=True)
-        if "temperature" in weather.columns and "avg_finish_time_seconds" in weather.columns:
-            st.scatter_chart(weather, x="temperature", y="avg_finish_time_seconds", color="marathon" if "marathon" in weather.columns else None)
+        weather = run_query("""
+            SELECT source, year, temperature_mean_c, avg_finish_time_sec
+            FROM gold.weather_impact
+            ORDER BY year, source
+        """)
+        if not weather.empty:
+            st.scatter_chart(weather, x="temperature_mean_c", y="avg_finish_time_sec", color="source")
+            st.dataframe(weather, use_container_width=True)
+        else:
+            st.info("Tabela gold.weather_impact vazia. Verifique se o weather enrichment foi executado.")
     except Exception as e:
         st.error(f"Erro ao carregar clima: {e}")
