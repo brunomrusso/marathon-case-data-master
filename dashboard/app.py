@@ -68,7 +68,7 @@ with st.sidebar:
 with st.sidebar:
     st.header("Filtros")
     try:
-        years_df = run_query("SELECT DISTINCT year FROM gold.finishers_by_year ORDER BY year")
+        years_df = run_query("SELECT DISTINCT year FROM marathon.gold.finishers_by_year ORDER BY year")
         available_years = sorted(years_df["year"].dropna().astype(int).tolist())
     except Exception as e:
         st.warning(f"Nao foi possivel carregar anos: {e}")
@@ -85,7 +85,7 @@ try:
             SUM(total_athletes) AS total_finishers,
             COUNT(DISTINCT year) AS total_editions,
             COUNT(DISTINCT source) AS total_marathons
-        FROM gold.kpi_summary
+        FROM marathon.gold.kpi_summary
     """)
     cols = st.columns(4)
     if not kpi.empty:
@@ -103,7 +103,7 @@ with tab1:
     try:
         finishers = run_query("""
             SELECT year, SUM(total_finishers) AS total_finishers
-            FROM gold.finishers_by_year
+            FROM marathon.gold.finishers_by_year
             GROUP BY year
             ORDER BY year
         """)
@@ -119,7 +119,7 @@ with tab1:
     try:
         comparison = run_query("""
             SELECT source, year, avg_finish_time_sec
-            FROM gold.kpi_summary
+            FROM marathon.gold.kpi_summary
             ORDER BY year, source
         """)
         if selected_years:
@@ -137,7 +137,7 @@ with tab2:
     try:
         top = run_query("""
             SELECT country, SUM(total_athletes) AS total_athletes
-            FROM gold.top_countries
+            FROM marathon.gold.top_countries
             GROUP BY country
             ORDER BY total_athletes DESC
             LIMIT 20
@@ -150,7 +150,7 @@ with tab2:
     try:
         athletes = run_query("""
             SELECT country, total_athletes, avg_finish_time_sec
-            FROM gold.athletes_by_country
+            FROM marathon.gold.athletes_by_country
             ORDER BY total_athletes DESC
             LIMIT 20
         """)
@@ -163,7 +163,7 @@ with tab3:
     try:
         times = run_query("""
             SELECT age_group, gender, AVG(mean) AS mean_time
-            FROM gold.times_distribution
+            FROM marathon.gold.times_distribution
             GROUP BY age_group, gender
             ORDER BY age_group
         """)
@@ -177,7 +177,7 @@ with tab3:
     try:
         stats = run_query("""
             SELECT age_group, gender, AVG(min) AS minimo, AVG(mean) AS media, AVG(median) AS mediana, AVG(max) AS maximo
-            FROM gold.times_distribution
+            FROM marathon.gold.times_distribution
             GROUP BY age_group, gender
             ORDER BY age_group
         """)
@@ -190,7 +190,7 @@ with tab4:
     try:
         profile = run_query("""
             SELECT age_group, gender, SUM(total_athletes) AS total_athletes
-            FROM gold.age_gender_profile
+            FROM marathon.gold.age_gender_profile
             GROUP BY age_group, gender
             ORDER BY age_group
         """)
@@ -206,13 +206,13 @@ with tab5:
     try:
         weather = run_query("""
             SELECT source, year, temperature_mean_c, avg_finish_time_sec
-            FROM gold.weather_impact
+            FROM marathon.gold.weather_impact
             ORDER BY year, source
         """)
         if not weather.empty:
             st.scatter_chart(weather, x="temperature_mean_c", y="avg_finish_time_sec", color="source")
             st.dataframe(weather, use_container_width=True)
         else:
-            st.info("Tabela gold.weather_impact vazia. Verifique se o weather enrichment foi executado.")
+            st.info("Tabela marathon.gold.weather_impact vazia. Verifique se o weather enrichment foi executado.")
     except Exception as e:
         st.error(f"Erro ao carregar clima: {e}")
