@@ -191,6 +191,7 @@ with tab3:
         times = run_query("""
             SELECT age_group, gender, AVG(mean) AS mean_time
             FROM marathon.gold.times_distribution
+            WHERE age_group RLIKE '^[0-9]+-[0-9]+$'
             GROUP BY age_group, gender
             ORDER BY age_group
         """)
@@ -206,6 +207,7 @@ with tab3:
         stats = run_query("""
             SELECT age_group, gender, AVG(min) AS minimo, AVG(mean) AS media, AVG(median) AS mediana, AVG(max) AS maximo
             FROM marathon.gold.times_distribution
+            WHERE age_group RLIKE '^[0-9]+-[0-9]+$'
             GROUP BY age_group, gender
             ORDER BY age_group
         """)
@@ -220,6 +222,7 @@ with tab4:
         profile = run_query("""
             SELECT age_group, gender, SUM(total_athletes) AS total_athletes
             FROM marathon.gold.age_gender_profile
+            WHERE age_group RLIKE '^[0-9]+-[0-9]+$'
             GROUP BY age_group, gender
             ORDER BY age_group
         """)
