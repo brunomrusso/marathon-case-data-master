@@ -158,6 +158,25 @@ def to_long(column):
             .otherwise(lit(None).cast("long")))
 
 
+def extract_age_lower(value_col):
+    """Extrai o limite inferior de uma idade/faixa etária."""
+    return (when(value_col.rlike(r"^\d{1,3}-\d{1,3}$"), regexp_extract(value_col, r"^(\d{1,3})-", 1).cast("int"))
+            .when(value_col.rlike(r"^[1-9]\d{0,2}$"), value_col.cast("int"))
+            .otherwise(lit(None).cast("int")))
+
+
+def standard_age_group(age_col):
+    """Converte idade para faixa etária padrão (estilo London): 0-17, 18-39, 40-44, 45-49..."""
+    return (when(age_col.isNull(), lit(None))
+            .when(age_col < 18, "0-17")
+            .when(age_col < 40, "18-39")
+            .when(age_col >= 40, concat(
+                (floor(age_col / 5) * 5).cast("int"),
+                lit("-"),
+                ((floor(age_col / 5) * 5) + 4).cast("int")))
+            .otherwise(None))
+
+
 def parse_time_to_seconds(time_col, output_name):
     h = regexp_extract(col(time_col), r"(\d+):", 1)
     m = regexp_extract(col(time_col), r"\d+:(\d+):", 1)
@@ -180,7 +199,7 @@ chicago = (chicago
     .withColumn("athlete_name", safe_get(chicago, "athlete_name", "athlete_name"))
     .withColumn("athlete_id", safe_get(chicago, "athlete_id", "athlete_id"))
     .withColumn("gender", normalize_gender("gender"))
-    .withColumn("age_group", upper(trim(safe_get(chicago, "age_group", "age_group"))))
+    .withColumn("age_group", standard_age_group(extract_age_lower(upper(trim(safe_get(chicago, "age_group", "age_group"))))))
     .withColumn("country", upper(trim(safe_get(chicago, "country_ioc", "country"))))
     .withColumn("place_overall", to_int(safe_get(chicago, "place_overall", "place_overall")))
     .withColumn("place_gender", to_int(safe_get(chicago, "place_gender", "place_gender")))
@@ -206,7 +225,7 @@ london = (london
     .withColumn("athlete_id", lit(None).cast("string"))
     .withColumn("country", upper(regexp_extract(trim(col("Name")), r"\((\w{3})\)", 1)))
     .withColumn("gender", normalize_gender("Gender"))
-    .withColumn("age_group", upper(trim(safe_get(london, "Category", "age_group"))))
+    .withColumn("age_group", standard_age_group(extract_age_lower(upper(trim(safe_get(london, "Category", "age_group"))))))
     .withColumn("place_overall", to_int(safe_get(london, "Overall_Place", "place_overall")))
     .withColumn("place_gender", to_int(safe_get(london, "Gender_Place", "place_gender")))
     .withColumn("finish_time", safe_get(london, "Finish_Time", "finish_time"))
@@ -226,11 +245,7 @@ nyc = (nyc
     .withColumn("athlete_name", safe_get(nyc, "Name", "athlete_name"))
     .withColumn("athlete_id", lit(None).cast("string"))
     .withColumn("gender", normalize_gender("Gender"))
-    .withColumn("age_group", when(to_int(col("Age")).isNotNull(), concat(
-        (floor(to_int(col("Age")) / 5) * 5).cast("int"),
-        lit("-"),
-        (floor(to_int(col("Age")) / 5) * 5 + 4).cast("int"))
-        ).otherwise(None))
+    .withColumn("age_group", standard_age_group(extract_age_lower(col("Age"))))
     .withColumn("country", upper(trim(safe_get(nyc, "Country", "country"))))
     .withColumn("place_overall", to_int(safe_get(nyc, "Overall", "place_overall")))
     .withColumn("place_gender", lit(None).cast("int"))
@@ -253,19 +268,13 @@ berlin = (berlin
     .withColumn("athlete_name", safe_get(berlin, "name", "athlete_name"))
     .withColumn("athlete_id", lit(None).cast("string"))
     .withColumn("gender", normalize_gender("sex"))
-    .withColumn("age_int", to_int(safe_get(berlin, "age_category", "age_category")))
-    .withColumn("age_group", when(col("age_int").isNotNull(), concat(
-        (floor(col("age_int") / 5) * 5).cast("int"),
-        lit("-"),
-        (floor(col("age_int") / 5) * 5 + 4).cast("int"))
-        ).otherwise(upper(trim(safe_get(berlin, "age_category", "age_group")))))
+    .withColumn("age_group", standard_age_group(extract_age_lower(safe_get(berlin, "age_category", "age_category"))))
     .withColumn("country", upper(trim(safe_get(berlin, "nation", "country"))))
     .withColumn("place_overall", lit(None).cast("int"))
     .withColumn("place_gender", lit(None).cast("int"))
     .withColumn("finish_time", safe_get(berlin, "final", "finish_time"))
     .withColumn("half_time", safe_get(berlin, "half", "half_time"))
     .withColumn("club", lit(None).cast("string"))
-    .drop("age_int")
 )
 berlin = (berlin
     .withColumn("finish_time_sec", parse_time_to_seconds("finish_time", "finish_time_sec"))
