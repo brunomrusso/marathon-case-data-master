@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 # Carrega variaveis do .env na raiz do projeto
 PROJECT_ROOT = Path(__file__).parent.parent
-load_dotenv(PROJECT_ROOT / ".env")
+load_dotenv(PROJECT_ROOT / ".env", override=True)
 
 
 def get_connection_params():
