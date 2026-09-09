@@ -45,6 +45,26 @@ def run_query(query):
             return pd.DataFrame(rows, columns=columns)
 
 
+def format_time(seconds):
+    """Converte segundos em string HH:MM:SS."""
+    if seconds is None or pd.isna(seconds):
+        return None
+    total = int(seconds)
+    h = total // 3600
+    m = (total % 3600) // 60
+    s = total % 60
+    return f"{h:02d}:{m:02d}:{s:02d}"
+
+
+def format_time_columns(df, columns):
+    """Adiciona colunas formatadas ao DataFrame para cada coluna em segundos."""
+    df = df.copy()
+    for c in columns:
+        if c in df.columns:
+            df[c + "_fmt"] = df[c].apply(format_time)
+    return df
+
+
 st.set_page_config(page_title="Marathon Majors", layout="wide")
 
 st.title("World Marathon Majors — Dashboard")
@@ -84,7 +104,8 @@ try:
         SELECT 
             SUM(total_athletes) AS total_finishers,
             COUNT(DISTINCT year) AS total_editions,
-            COUNT(DISTINCT source) AS total_marathons
+            COUNT(DISTINCT source) AS total_marathons,
+            AVG(avg_finish_time_sec) AS avg_finish_time_sec
         FROM marathon.gold.kpi_summary
     """)
     cols = st.columns(4)
@@ -92,6 +113,8 @@ try:
         cols[0].metric("Conclusoes", int(kpi["total_finishers"].iloc[0] or 0))
         cols[1].metric("Edicoes", int(kpi["total_editions"].iloc[0] or 0))
         cols[2].metric("Maratonas", int(kpi["total_marathons"].iloc[0] or 0))
+        if not pd.isna(kpi["avg_finish_time_sec"].iloc[0]):
+            cols[3].metric("Tempo medio", format_time(kpi["avg_finish_time_sec"].iloc[0]))
 except Exception as e:
     st.warning(f"Nao foi possivel carregar KPIs: {e}")
 
@@ -115,7 +138,7 @@ with tab1:
     except Exception as e:
         st.error(f"Erro ao carregar conclusoes: {e}")
 
-    st.subheader("Comparacao entre maratonas")
+    st.subheader("Comparacao entre maratonas (tempo medio em minutos)")
     try:
         comparison = run_query("""
             SELECT source, year, avg_finish_time_sec
@@ -127,8 +150,11 @@ with tab1:
         if selected_marathon != "Todas":
             comparison = comparison[comparison["source"] == selected_marathon.lower()]
         if not comparison.empty:
-            pivot = comparison.pivot_table(index="year", columns="source", values="avg_finish_time_sec", aggfunc="mean")
+            comparison["avg_finish_time_min"] = comparison["avg_finish_time_sec"] / 60
+            comparison = format_time_columns(comparison, ["avg_finish_time_sec"])
+            pivot = comparison.pivot_table(index="year", columns="source", values="avg_finish_time_min", aggfunc="mean")
             st.line_chart(pivot)
+            st.dataframe(comparison[["source", "year", "avg_finish_time_sec_fmt"]].sort_values(["year", "source"]), use_container_width=True)
     except Exception as e:
         st.error(f"Erro ao carregar comparacao: {e}")
 
@@ -154,12 +180,13 @@ with tab2:
             ORDER BY total_athletes DESC
             LIMIT 20
         """)
-        st.dataframe(athletes, use_container_width=True)
+        athletes = format_time_columns(athletes, ["avg_finish_time_sec"])
+        st.dataframe(athletes[["country", "total_athletes", "avg_finish_time_sec_fmt"]], use_container_width=True)
     except Exception as e:
         st.error(f"Erro ao carregar atletas: {e}")
 
 with tab3:
-    st.subheader("Tempos por faixa etaria e genero")
+    st.subheader("Tempos por faixa etaria e genero (minutos)")
     try:
         times = run_query("""
             SELECT age_group, gender, AVG(mean) AS mean_time
@@ -168,7 +195,8 @@ with tab3:
             ORDER BY age_group
         """)
         if not times.empty:
-            pivot = times.pivot_table(index="age_group", columns="gender", values="mean_time", aggfunc="mean")
+            times["mean_time_min"] = times["mean_time"] / 60
+            pivot = times.pivot_table(index="age_group", columns="gender", values="mean_time_min", aggfunc="mean")
             st.bar_chart(pivot)
     except Exception as e:
         st.error(f"Erro ao carregar tempos: {e}")
@@ -181,7 +209,8 @@ with tab3:
             GROUP BY age_group, gender
             ORDER BY age_group
         """)
-        st.dataframe(stats, use_container_width=True)
+        stats = format_time_columns(stats, ["minimo", "media", "mediana", "maximo"])
+        st.dataframe(stats[["age_group", "gender", "minimo_fmt", "media_fmt", "mediana_fmt", "maximo_fmt"]], use_container_width=True)
     except Exception as e:
         st.error(f"Erro ao carregar estatisticas: {e}")
 
@@ -210,8 +239,10 @@ with tab5:
             ORDER BY year, source
         """)
         if not weather.empty:
-            st.scatter_chart(weather, x="temperature_mean_c", y="avg_finish_time_sec", color="source")
-            st.dataframe(weather, use_container_width=True)
+            weather["avg_finish_time_min"] = weather["avg_finish_time_sec"] / 60
+            weather = format_time_columns(weather, ["avg_finish_time_sec"])
+            st.scatter_chart(weather, x="temperature_mean_c", y="avg_finish_time_min", color="source")
+            st.dataframe(weather[["source", "year", "temperature_mean_c", "avg_finish_time_sec_fmt"]], use_container_width=True)
         else:
             st.info("Tabela marathon.gold.weather_impact vazia. Verifique se o weather enrichment foi executado.")
     except Exception as e:
