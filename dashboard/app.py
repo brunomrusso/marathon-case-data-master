@@ -40,8 +40,9 @@ def run_query(query):
     with sql.connect(server_hostname=host, http_path=http_path, access_token=token) as conn:
         with conn.cursor() as cur:
             cur.execute(query)
-            table = cur.fetchall_arrow_table()
-            return table.to_pandas()
+            columns = [desc[0] for desc in cur.description]
+            rows = cur.fetchall()
+            return pd.DataFrame(rows, columns=columns)
 
 
 st.set_page_config(page_title="Marathon Majors", layout="wide")
