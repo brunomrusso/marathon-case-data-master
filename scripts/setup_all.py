@@ -356,13 +356,27 @@ def step_update_config(state):
 def configure_databricks_token(host, validator):
     try:
         token = get_databricks_token(use_environment=False)
+        bootstrap_response = None
+        for attempt in range(1, 9):
+            bootstrap_response = requests.get(
+                f"{host}/api/2.0/clusters/list",
+                headers=get_databricks_headers(token),
+                timeout=30,
+            )
+            if bootstrap_response.status_code == 200:
+                break
+            if bootstrap_response.status_code not in (401, 403, 404) or attempt == 8:
+                break
+            print_info(f"Aguardando acesso Entra ID ao workspace (tentativa {attempt}/8)...")
+            time.sleep(15)
     except Exception as exc:
         print_warn(f"Nao foi possivel obter token Microsoft Entra ID: {exc}")
     else:
-        if validator(host, token):
+        if bootstrap_response.status_code == 200 and validator(host, token):
             os.environ["DATABRICKS_TOKEN"] = token
             print_ok("Autenticacao Databricks via Microsoft Entra ID")
             return token
+        print_warn(f"Bootstrap Databricks falhou: {bootstrap_response.status_code} - {bootstrap_response.text[:300]}")
 
     raise RuntimeError(
         "A identidade Microsoft Entra ID nao teve acesso ao Databricks. "
