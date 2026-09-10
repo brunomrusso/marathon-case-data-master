@@ -8,6 +8,11 @@ variable "github_repository" {
   default = "brunomrusso/marathon-case-data-master"
 }
 
+variable "github_oidc_subject" {
+  type    = string
+  default = "repo:brunomrusso@30119424/marathon-case-data-master@1352762490:environment:production"
+}
+
 variable "tags" {
   type = map(string)
   default = {

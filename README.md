@@ -265,7 +265,7 @@ A esteira usa GitHub OIDC e uma User Assigned Managed Identity. Não existem cli
 O bootstrap cria recursos persistentes que não fazem parte do ambiente descartável:
 
 - Resource Group `rg-marathon-bootstrap`;
-- identidade `id-marathon-github` e credencial federada para o environment `production`;
+- identidade `id-marathon-github` e credencial federada para o environment `production`, vinculada aos IDs imutáveis do proprietário e do repositório;
 - backend privado para os states Terraform;
 - Storage Seed privado para os CSVs brutos;
 - Resource Group vazio `rg-marathon-case`, onde a identidade recebe `Contributor` e `User Access Administrator`.

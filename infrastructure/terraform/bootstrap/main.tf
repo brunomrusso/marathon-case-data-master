@@ -94,7 +94,7 @@ resource "azurerm_federated_identity_credential" "github_production" {
   parent_id           = azurerm_user_assigned_identity.github.id
   audience            = ["api://AzureADTokenExchange"]
   issuer              = "https://token.actions.githubusercontent.com"
-  subject             = "repo:${var.github_repository}:environment:production"
+  subject             = var.github_oidc_subject
 }
 
 resource "azurerm_role_assignment" "github_target_contributor" {
