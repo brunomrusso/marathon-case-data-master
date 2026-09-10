@@ -37,6 +37,13 @@ resource "azurerm_resource_group" "target" {
   tags     = var.tags
 }
 
+resource "azurerm_management_lock" "bootstrap" {
+  name       = "protect-marathon-bootstrap"
+  scope      = azurerm_resource_group.bootstrap.id
+  lock_level = "CanNotDelete"
+  notes      = "Protege identidade OIDC, Storage Seed e backend Terraform contra exclusao acidental."
+}
+
 resource "azurerm_storage_account" "state" {
   name                            = "stmarathontf${random_string.suffix.result}"
   resource_group_name             = azurerm_resource_group.bootstrap.name
