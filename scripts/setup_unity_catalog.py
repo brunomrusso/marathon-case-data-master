@@ -175,17 +175,17 @@ def create_external_location(host, token, name, url, credential_name):
         raise RuntimeError(f"Erro ao criar external location: {resp.status_code} - {resp.text}")
 
 
-def assign_platform_owners(host, token, catalog_name):
-    resources = [
-        (f"/api/2.1/unity-catalog/catalogs/{catalog_name}", "catalog"),
-        ("/api/2.1/unity-catalog/external-locations/marathon-external-location", "external location"),
-        ("/api/2.1/unity-catalog/storage-credentials/marathon-storage-credential", "storage credential"),
-    ]
-    for path, resource_type in resources:
-        resp = workspace_api("PATCH", host, token, path, {"owner": "admins"})
-        if resp.status_code != 200:
-            raise RuntimeError(f"Erro ao atribuir owner admins ao {resource_type}: {resp.status_code} - {resp.text}")
-        print(f"Owner do {resource_type} definido como admins")
+def grant_catalog_read_access(host, token, catalog_name):
+    resp = workspace_api(
+        "PATCH",
+        host,
+        token,
+        f"/api/2.1/unity-catalog/permissions/catalog/{catalog_name}",
+        {"changes": [{"principal": "account users", "add": ["BROWSE", "USE_CATALOG", "USE_SCHEMA", "SELECT"]}]},
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(f"Erro ao conceder leitura no catalogo: {resp.status_code} - {resp.text}")
+    print("Acesso de leitura do catalogo concedido a account users")
 
 
 def create_catalog(host, token, name, storage_root):
@@ -271,7 +271,7 @@ def main():
     create_storage_credential(host, token, "marathon-storage-credential", access_connector_id)
     create_external_location(host, token, "marathon-external-location", external_url, "marathon-storage-credential")
     create_catalog(host, token, catalog_name, f"{external_url}catalogs/{catalog_name}/")
-    assign_platform_owners(host, token, catalog_name)
+    grant_catalog_read_access(host, token, catalog_name)
     print(f"CATALOG_NAME={catalog_name}")
 
     print("Unity Catalog configurado com sucesso.")
