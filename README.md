@@ -118,20 +118,7 @@ ALERT_EMAIL=seu-email@exemplo.com                        # opcional
 DATABRICKS_WORKSPACE_ROOT=                               # opcional; padrao: /Workspace/Shared/marathon-case
 ```
 
-> `DATABRICKS_TOKEN` sera solicitado durante o setup. Nao precisa preencher antecipadamente. Nenhum token GitHub é necessário: os notebooks locais são implantados diretamente no workspace.
-
-#### Gerar o Databricks Personal Access Token (PAT)
-
-O setup pede esse token no terminal. Para gerar:
-
-- Acesse o workspace do Databricks (`https://adb-...azuredatabricks.net`)
-- Clique no ícone do usuário > **User Settings**
-- Vá em **Developer > Access tokens**
-- Clique em **Generate new token**
-- Nome: `setup-marathon`
-- Lifetime: **No lifetime** (ou o maior possível)
-- Scope: **All APIs**
-- Cole o token no terminal quando o setup pedir
+> Nenhum token GitHub ou Databricks precisa ser criado. O setup usa a identidade Microsoft Entra ID da sessão `az login` e obtém tokens temporários por `DefaultAzureCredential`. Um PAT pode ser informado apenas como fallback não persistido se a identidade atual não tiver acesso ao workspace.
 
 Execute o setup unico:
 
@@ -139,7 +126,7 @@ Execute o setup unico:
 python scripts/setup_all.py
 ```
 
-Esse script orquestra todo o resto. Nesta etapa da automação, a única ação manual específica da plataforma é gerar e colar o **Databricks PAT** quando solicitado.
+Esse script orquestra todo o resto usando a sessão Microsoft Entra ID já autenticada no Azure CLI, sem persistir tokens de acesso.
 
 Fluxo do script:
 
@@ -147,7 +134,7 @@ Fluxo do script:
 2. Garante login no Azure
 3. Cria a infraestrutura Azure via Terraform (resource group, storage, workspace, access connector, key vault)
 4. Atualiza `config/config.yaml` com os recursos criados
-5. Pede o **Databricks PAT** e verifica o Unity Catalog
+5. Autentica no Databricks via Microsoft Entra ID e verifica o Unity Catalog
 6. Cria storage credential, external location e catalog no Unity Catalog
 7. Salva secrets no Databricks
 8. Registra EventGrid provider e atribui roles ao Access Connector
@@ -338,8 +325,8 @@ marathon-case-data-master/
 - **Setup unificado:** novo `scripts/setup_all.py` executa todo o provisionamento e configuracao em um unico comando, com persistencia de estado para retomada.
 - **Infraestrutura como Terraform:** pasta `infrastructure/terraform/` cria Azure resources e Databricks workspace de forma automatizada.
 - **Configuracao do Unity Catalog via script:** `scripts/setup_unity_catalog.py` cria/escolhe metastore, atribui o workspace e cria storage credential, external location e catalog.
-- **Acoes manuais minimas:** somente geração do Databricks PAT; os notebooks são implantados diretamente pela Workspace API.
-- **Arquivo `.env`:** centraliza configurações de ambiente (Databricks token, email de alerta e caminho opcional no workspace), sem credenciais GitHub.
+- **Autenticação sem PAT:** APIs e SQL Connector usam tokens temporários Microsoft Entra ID obtidos por `DefaultAzureCredential`; PAT existe apenas como fallback não persistido.
+- **Arquivo `.env`:** centraliza somente configurações não secretas, como host, email de alerta, HTTP Path e caminho opcional no workspace.
 - **Versao Python do enable_file_events:** nao depende mais exclusivamente do PowerShell.
 - **Bicep mantido como alternativa:** arquivos `infrastructure/main.bicep` e `resources.bicep` continuam disponiveis, mas nao automatizam o metastore.
 

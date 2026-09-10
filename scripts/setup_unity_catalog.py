@@ -11,7 +11,7 @@ Ele pode:
 Requer:
 - DATABRICKS_ACCOUNT_ID
 - DATABRICKS_HOST
-- DATABRICKS_TOKEN (PAT ou Azure AD token)
+- Sessao Microsoft Entra ID disponivel via DefaultAzureCredential
 - access_connector_id (do Terraform output)
 - storage_account e container (do config.yaml)
 """
@@ -26,6 +26,8 @@ import requests
 import yaml
 from dotenv import load_dotenv
 
+from databricks_auth import get_databricks_token
+
 
 PROJECT_ROOT = Path(__file__).parent.parent
 ENV_FILE = PROJECT_ROOT / ".env"
@@ -33,23 +35,6 @@ CONFIG_FILE = PROJECT_ROOT / "config" / "config.yaml"
 
 if ENV_FILE.exists():
     load_dotenv(ENV_FILE)
-
-
-def get_aad_token_for_databricks():
-    import subprocess
-    resource = "2ff814a6-3304-4ab8-85cb-cd0e6f879c1d"
-    for cmd in [
-        ["az", "account", "get-access-token", "--resource", resource],
-    ]:
-        for name in ["az", "az.cmd", "az.exe"]:
-            az_path = shutil.which(name)
-            if az_path:
-                cmd[0] = az_path
-                break
-        result = subprocess.run(cmd, text=True, capture_output=True, shell=True)
-        if result.returncode == 0:
-            return json.loads(result.stdout)["accessToken"]
-    raise RuntimeError("Falha ao obter Azure AD token para Databricks")
 
 
 def databricks_api(method, host, token, path, json_data=None, params=None, timeout=30, retries=5):
@@ -215,17 +200,13 @@ def create_catalog(host, token, name, storage_root):
 def main():
     account_id = os.environ.get("DATABRICKS_ACCOUNT_ID")
     host = os.environ.get("DATABRICKS_HOST", "").rstrip("/")
-    token = os.environ.get("DATABRICKS_TOKEN")
+    token = get_databricks_token()
     workspace_id = os.environ.get("DATABRICKS_WORKSPACE_ID")
     access_connector_id = os.environ.get("ACCESS_CONNECTOR_ID")
     catalog_name = os.environ.get("CATALOG_NAME", "marathon")
 
     if not host or not workspace_id or not access_connector_id:
         print("Variaveis obrigatorias: DATABRICKS_HOST, DATABRICKS_WORKSPACE_ID, ACCESS_CONNECTOR_ID")
-        sys.exit(1)
-
-    if not token:
-        print("DATABRICKS_TOKEN nao encontrado. Execute setup_all.py para informar o token.")
         sys.exit(1)
 
     workspace_id = int(workspace_id)

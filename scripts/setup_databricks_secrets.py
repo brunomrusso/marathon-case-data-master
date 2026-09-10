@@ -3,6 +3,8 @@ import getpass
 import requests
 from pathlib import Path
 
+from databricks_auth import get_databricks_token
+
 
 def get_env_or_prompt(name, secret=False):
     value = os.environ.get(name)
@@ -17,7 +19,7 @@ def get_env_or_prompt(name, secret=False):
 
 def main():
     host = get_env_or_prompt("DATABRICKS_HOST").rstrip("/")
-    token = get_env_or_prompt("DATABRICKS_TOKEN", secret=True)
+    token = get_databricks_token()
 
     headers = {"Authorization": f"Bearer {token}"}
 

@@ -4,6 +4,8 @@ import requests
 import yaml
 from pathlib import Path
 
+from databricks_auth import get_databricks_token
+
 
 def get_env_or_raise(name):
     value = os.environ.get(name)
@@ -20,7 +22,7 @@ def main():
     args = parser.parse_args()
 
     host = get_env_or_raise("DATABRICKS_HOST").rstrip("/")
-    token = get_env_or_raise("DATABRICKS_TOKEN")
+    token = get_databricks_token()
     workspace_root = args.workspace_root or args.repo_path or os.environ.get("DATABRICKS_WORKSPACE_ROOT") or os.environ.get("DATABRICKS_REPO_PATH")
     if not workspace_root:
         raise ValueError("Defina DATABRICKS_WORKSPACE_ROOT")

@@ -35,6 +35,8 @@ import requests
 import yaml
 from dotenv import load_dotenv
 
+from databricks_auth import get_databricks_token
+
 
 PROJECT_ROOT = Path(__file__).parent.parent
 STATE_FILE = PROJECT_ROOT / ".setup_state.json"
@@ -43,8 +45,6 @@ ENV_EXAMPLE = PROJECT_ROOT / ".env.example"
 CONFIG_FILE = PROJECT_ROOT / "config" / "config.yaml"
 TERRAFORM_DIR = PROJECT_ROOT / "infrastructure" / "terraform"
 DATABRICKS_TERRAFORM_DIR = TERRAFORM_DIR / "databricks"
-
-DATABRICKS_AAD_RESOURCE = "2ff814a6-3304-4ab8-85cb-cd0e6f879c1d"
 
 STEPS = [
     "prerequisites",
@@ -338,13 +338,24 @@ def step_update_config(state):
     mark_completed(state, "update_config")
 
 
-def get_aad_token_for_databricks():
-    token_json = run_command(
-        ["az", "account", "get-access-token", "--resource", DATABRICKS_AAD_RESOURCE],
-        capture=True,
-        check=True,
-    )
-    return json.loads(token_json)["accessToken"]
+def configure_databricks_token(host, validator):
+    try:
+        token = get_databricks_token(use_environment=False)
+    except Exception as exc:
+        print_warn(f"Nao foi possivel obter token Microsoft Entra ID: {exc}")
+    else:
+        if validator(host, token):
+            os.environ["DATABRICKS_TOKEN"] = token
+            print_ok("Autenticacao Databricks via Microsoft Entra ID")
+            return token
+
+    print_warn("A identidade Microsoft Entra ID nao teve acesso ao Databricks.")
+    token = prompt("Cole um Databricks PAT temporario para fallback", secret=True)
+    if not validator(host, token):
+        raise RuntimeError("Token sem acesso ao Databricks.")
+    os.environ["DATABRICKS_TOKEN"] = token
+    print_warn("Usando PAT somente nesta execucao; o token nao sera persistido.")
+    return token
 
 
 def step_account_id(state):
@@ -353,34 +364,7 @@ def step_account_id(state):
     host = os.environ["DATABRICKS_HOST"].rstrip("/")
     workspace_id = state["outputs"].get("workspace_id")
 
-    # Tenta usar PAT do .env se existir
-    token = os.environ.get("DATABRICKS_TOKEN")
-    if not token or not token.startswith("dapi"):
-        print_info("")
-        print_info("=" * 60)
-        print_info("ACAO MANUAL NECESSARIA: gerar Databricks Personal Access Token")
-        print_info("=" * 60)
-        print_info("Passos:")
-        print_info(f"  1. Abra o workspace: {host}")
-        print_info("  2. Clique no icone do usuario (canto superior direito) > User Settings")
-        print_info("  3. Va em Developer > Access tokens")
-        print_info("  4. Clique em 'Generate new token'")
-        print_info("     - Name: setup-marathon")
-        print_info("     - Lifetime: sem expiracao (recomendado para a demo)")
-        print_info("  5. Cole o token abaixo (comeca com 'dapi...')")
-        print_info("=" * 60)
-        try:
-            webbrowser.open(host)
-            print_info("Workspace aberto no navegador. Navegue ate User Settings > Developer > Access tokens.")
-        except Exception:
-            pass
-
-        token = prompt("Cole o Databricks Personal Access Token")
-        if not token.startswith("dapi"):
-            raise RuntimeError("Token invalido. Deve comecar com 'dapi'.")
-        os.environ["DATABRICKS_TOKEN"] = token
-        update_env_file(["DATABRICKS_TOKEN"])
-        print_ok("PAT salvo no .env")
+    token = configure_databricks_token(host, _test_uc_token)
 
     print_info("Verificando se Unity Catalog ja esta ativado...")
     print_info(f"Workspace ID usado: {workspace_id}")
@@ -400,29 +384,6 @@ def step_account_id(state):
         save_state(state)
         mark_completed(state, "account_id")
         return
-
-    if resp.status_code == 403:
-        print_warn("Token invalido para o Unity Catalog. Gerando um novo PAT...")
-        token = prompt("Cole o Databricks Personal Access Token")
-        if not token.startswith("dapi"):
-            raise RuntimeError("Token invalido. Deve comecar com 'dapi'.")
-        os.environ["DATABRICKS_TOKEN"] = token
-        update_env_file(["DATABRICKS_TOKEN"])
-        print_ok("Novo PAT salvo")
-        # Tenta novamente
-        resp = requests.get(
-            f"{host}/api/2.1/unity-catalog/catalogs",
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=30,
-        )
-        if resp.status_code == 200:
-            catalogs = resp.json().get("catalogs", [])
-            catalog_names = [c.get("name") for c in catalogs]
-            print_ok(f"Unity Catalog ativado. Catalogs: {catalog_names}")
-            state["outputs"]["unity_catalog_ready"] = True
-            save_state(state)
-            mark_completed(state, "account_id")
-            return
 
     print_warn("Unity Catalog nao ativado. Precisamos do Account ID.")
     account_id = os.environ.get("DATABRICKS_ACCOUNT_ID")
@@ -474,35 +435,7 @@ def step_unity_catalog(state):
     update_env_file(["DATABRICKS_HOST"])
     print_ok(f"Workspace URL atualizado: {host}")
 
-    token = os.environ.get("DATABRICKS_TOKEN")
-
-    if not token or not _test_uc_token(host, token):
-        print_warn("Token do .env invalido ou sem acesso ao Unity Catalog.")
-        print_info("")
-        print_info("=" * 60)
-        print_info("ACAO MANUAL NECESSARIA: gerar Databricks Personal Access Token")
-        print_info("=" * 60)
-        print_info("Passos:")
-        print_info(f"  1. Abra o workspace: {host}")
-        print_info("  2. Clique no icone do usuario (canto superior direito) > User Settings")
-        print_info("  3. Va em Developer > Access tokens")
-        print_info("  4. Clique em 'Generate new token'")
-        print_info("     - Name: setup-marathon")
-        print_info("     - Lifetime: sem expiracao (recomendado para a demo)")
-        print_info("  5. Cole o token abaixo (comeca com 'dapi...')")
-        print_info("=" * 60)
-        try:
-            webbrowser.open(host)
-            print_info("Workspace aberto no navegador. Navegue ate User Settings > Developer > Access tokens.")
-        except Exception:
-            pass
-
-        token = prompt("Cole o Databricks Personal Access Token")
-        if not token.startswith("dapi"):
-            raise RuntimeError("Token invalido. Deve comecar com 'dapi'.")
-        os.environ["DATABRICKS_TOKEN"] = token
-        update_env_file(["DATABRICKS_TOKEN"])
-        print_ok("PAT salvo no .env")
+    configure_databricks_token(host, _test_uc_token)
 
     catalog_name = os.environ.get("CATALOG_NAME", "marathon")
     print_ok(f"Catalog name: {catalog_name}")
@@ -520,7 +453,7 @@ def step_databricks_secrets(state):
     print_step(STEPS.index("databricks_secrets") + 1, "Salvando secrets no Databricks")
 
     host = os.environ["DATABRICKS_HOST"].rstrip("/")
-    token = os.environ["DATABRICKS_TOKEN"]
+    token = configure_databricks_token(host, _test_uc_token)
 
     resp = requests.post(
         f"{host}/api/2.0/secrets/scopes/create",
@@ -660,9 +593,7 @@ def step_deploy_notebooks(state):
     print_step(STEPS.index("deploy_notebooks") + 1, "Implantando notebooks no Databricks Workspace")
 
     host = f"https://{state['outputs']['databricks_workspace_url']}"
-    token = os.environ.get("DATABRICKS_TOKEN")
-    if not token or not _test_jobs_token(host, token):
-        raise RuntimeError("DATABRICKS_TOKEN invalido ou sem acesso ao workspace.")
+    token = configure_databricks_token(host, _test_jobs_token)
 
     api_root = (os.environ.get("DATABRICKS_WORKSPACE_ROOT") or "/Shared/marathon-case").strip().rstrip("/")
     if api_root.startswith("/Workspace"):
@@ -733,16 +664,7 @@ def step_create_workflow(state):
     os.environ["DATABRICKS_HOST"] = host
     print_ok(f"Workspace URL: {host}")
 
-    token = os.environ.get("DATABRICKS_TOKEN")
-    if not token or not _test_jobs_token(host, token):
-        print_warn("O token atual nao tem acesso a API de Jobs.")
-        print_info("Gere um novo token NO WORKSPACE ACIMA e cole abaixo.")
-        token = prompt("Cole o Databricks Personal Access Token")
-        if not token.startswith("dapi"):
-            raise RuntimeError("Token invalido. Deve comecar com 'dapi'.")
-        os.environ["DATABRICKS_TOKEN"] = token
-        update_env_file(["DATABRICKS_TOKEN"])
-        print_ok("Novo PAT salvo")
+    configure_databricks_token(host, _test_jobs_token)
 
     workspace_root = os.environ.get("DATABRICKS_WORKSPACE_ROOT") or state["outputs"].get("databricks_workspace_root")
     if not workspace_root:
@@ -766,9 +688,7 @@ def step_create_dashboard(state):
     print_step(STEPS.index("create_dashboard") + 1, "Criando SQL Warehouse e dashboard AI/BI")
 
     host = f"https://{state['outputs']['databricks_workspace_url']}"
-    token = os.environ.get("DATABRICKS_TOKEN")
-    if not token or not _test_jobs_token(host, token):
-        raise RuntimeError("DATABRICKS_TOKEN invalido ou sem acesso ao workspace.")
+    configure_databricks_token(host, _test_jobs_token)
     if not DATABRICKS_TERRAFORM_DIR.exists():
         raise RuntimeError(f"Terraform do Databricks nao encontrado: {DATABRICKS_TERRAFORM_DIR}")
 
@@ -819,7 +739,7 @@ def main():
 
     if ENV_FILE.exists():
         load_dotenv(ENV_FILE, override=True)
-        remove_env_vars(["STORAGE_ACCESS_KEY"])
+        remove_env_vars(["STORAGE_ACCESS_KEY", "DATABRICKS_TOKEN"])
     state = load_state()
     if args.reset:
         print_warn("Resetando estado do setup")

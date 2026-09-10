@@ -3,19 +3,22 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+from azure.identity import DefaultAzureCredential
 from databricks import sql
 from dotenv import load_dotenv
 
 # Carrega variaveis do .env na raiz do projeto e sobrescreve as ja carregadas
 PROJECT_ROOT = Path(__file__).parent.parent
 load_dotenv(PROJECT_ROOT / ".env", override=True)
+DATABRICKS_SCOPE = "2ff814a6-3304-4ab8-85cb-cd0e6f879c1d/.default"
+AZURE_CREDENTIAL = DefaultAzureCredential()
 
 
 def get_connection_params():
     """Limpa e retorna os parametros de conexao."""
     host = os.environ.get("DATABRICKS_HOST", "").strip()
     host = host.removeprefix("https://").removeprefix("http://").rstrip("/")
-    token = os.environ.get("DATABRICKS_TOKEN", "").strip()
+    token = AZURE_CREDENTIAL.get_token(DATABRICKS_SCOPE).token
     http_path = os.environ.get("DATABRICKS_HTTP_PATH", "").strip()
     return host, token, http_path
 
@@ -34,7 +37,7 @@ def run_query(query):
     host, token, http_path = get_connection_params()
 
     if not all([host, token, http_path]):
-        st.error("Preencha DATABRICKS_HOST, DATABRICKS_TOKEN e DATABRICKS_HTTP_PATH no .env")
+        st.error("Preencha DATABRICKS_HOST e DATABRICKS_HTTP_PATH no .env e autentique no Azure CLI")
         st.stop()
 
     with sql.connect(server_hostname=host, http_path=http_path, access_token=token) as conn:
@@ -74,7 +77,7 @@ with st.sidebar:
     with st.expander("Diagnostico de conexao"):
         host, token, http_path = get_connection_params()
         st.write(f"Host: {host[:40]}..." if host else "Host nao configurado")
-        st.write(f"Token: {token[:8]}..." if token else "Token nao configurado")
+        st.write("Token: Microsoft Entra ID")
         st.write(f"HTTP path: {http_path}")
         if st.button("Testar conexao"):
             try:
