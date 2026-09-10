@@ -15,7 +15,7 @@ Desenvolver uma solução completa de Engenharia de Dados para ingerir, processa
 - **Governança:** Unity Catalog, External Locations e Managed Identities
 - **Observabilidade:** Databricks Job Metrics + tabela `monitoring.data_quality_log` com contagem in/out, % nulos, rejeitados, schema drift e tempo de execução por camada. Alertas por email no workflow. Lineage automático do Unity Catalog.
 - **Segurança:** Azure Key Vault, RBAC, criptografia, mascaramento e Access Connector
-- **Dashboard:** Power BI ou Streamlit
+- **Dashboard:** Databricks AI/BI provisionado por Terraform; Streamlit opcional para consumo externo
 
 ### Arquitetura Medalhão
 - **Raw:** landing zone para CSV de resultados e JSONs brutos da API Open-Meteo (`raw/weather_api/`). Nenhum dado é processado nesta camada.
@@ -70,8 +70,8 @@ Antes de começar, você precisa de:
 - Permissões para criar Resource Groups, Storage Accounts e Databricks Workspaces.
 - **Python 3.10+** instalado localmente.
 - **Azure CLI** instalado e logado (`az login`).
-- **Terraform** instalado e no `PATH`: https://developer.hashicorp.com/terraform/install
-  - No Windows, adicione a pasta do `terraform.exe` ao `PATH` (ou use `$env:Path += ";<caminho>"` no PowerShell).
+- **Terraform 64-bit** instalado e no `PATH`: https://developer.hashicorp.com/terraform/install
+  - O provider Databricks não suporta Windows 32-bit (`windows_386`). No Windows, instale a versão AMD64; o setup também detecta instalações feitas pelo WinGet.
 - Acesso aos datasets listados acima.
 - Permissão de **Workspace Admin** no Databricks workspace que será criado.
 
@@ -155,6 +155,7 @@ Fluxo do script:
 10. Implanta os notebooks locais em `/Workspace/Shared/marathon-case/notebooks`
 11. Valida individualmente os notebooks implantados
 12. Cria o workflow com File Arrival Trigger
+13. Cria o SQL Warehouse e publica o Databricks AI/BI Dashboard
 
 O deploy usa a Workspace API com sobrescrita idempotente. O GitHub permanece como controle de versão, mas não é uma dependência do setup nem da execução do workflow. Para uma migração temporária, `DATABRICKS_REPO_PATH` ainda é aceito internamente como caminho legado se `DATABRICKS_WORKSPACE_ROOT` não estiver definido.
 
@@ -227,26 +228,37 @@ Todas as tabelas Gold ficam em `marathon.gold.*` e são o ponto de consumo do da
 | `gold.age_gender_profile` | Perfil demográfico dos finishers: contagem e tempo médio por grupo etário e gênero. Permite identificar o perfil dominante em cada prova. |
 | `gold.weather_impact` | Correlação entre condições climáticas (temperatura, precipitação, vento) e desempenho médio dos atletas. Disponível somente quando `silver.marathons_with_weather` está populada. |
 
-### 13. Dashboard
+### 13. Dashboards
 
-O projeto inclui um dashboard Streamlit pronto em `dashboard/app.py`.
+#### 13.1 Databricks AI/BI Dashboard
 
-#### 13.1 Criar o Databricks SQL Warehouse
+O dashboard oficial do case é versionado em `dashboard/databricks/marathon_dashboard.lvdash.json` e provisionado automaticamente pelo último passo de `scripts/setup_all.py`.
 
-1. No workspace, va em **SQL > SQL Warehouses**.
-2. Clique em **Create SQL Warehouse**.
-3. Escolha o tamanho (o menor `2X-Small` e suficiente para a demo).
-4. Copie o **HTTP Path** (esta no campo "Connection details").
+O Terraform separado em `infrastructure/terraform/databricks/` cria:
 
-#### 13.2 Configurar o .env
+- SQL Warehouse Serverless `2X-Small`, Photon habilitado, cluster único e auto-stop de 10 minutos;
+- dashboard publicado em `/Shared/marathon-case`;
+- associação automática ao catálogo `marathon` e schema `gold`;
+- outputs do warehouse, HTTP Path e dashboard.
 
-No arquivo `.env` da raiz do projeto, adicione:
+O setup usa `no_wait=true`: não bloqueia esperando o compute iniciar e imprime a URL publicada ao final. Na primeira consulta, o warehouse pode permanecer em `STARTING` enquanto a Azure provisiona o cluster.
 
-```
-DATABRICKS_HTTP_PATH=/sql/1.0/warehouses/xxxxxxxxxxxxxxxx
-```
+O dashboard possui páginas para:
 
-#### 13.3 Executar o dashboard
+- visão executiva e KPIs;
+- evolução de concluintes e top países;
+- participação e tempo médio por país;
+- distribuição de tempos, quartis e mediana;
+- perfil por faixa etária e gênero;
+- comparação histórica entre as quatro maratonas;
+- relação entre clima e performance;
+- qualidade e observabilidade usando `marathon.monitoring.data_quality_log`.
+
+As oito tabelas de `marathon.gold` são consumidas explicitamente pelo dashboard.
+
+#### 13.2 Streamlit opcional
+
+O consumidor externo em `dashboard/app.py` continua disponível. O setup preenche `DATABRICKS_HTTP_PATH` automaticamente com o warehouse provisionado.
 
 ```powershell
 python -m venv .venv
@@ -254,15 +266,6 @@ python -m venv .venv
 pip install -r requirements.txt
 streamlit run dashboard/app.py
 ```
-
-O dashboard exibe:
-- KPIs (conclusoes, paises, edicoes)
-- Conclusoes por ano
-- Top paises
-- Distribuicao de tempos
-- Comparacao entre maratonas
-- Perfil demografico
-- Impacto do clima
 
 ## V. Estrutura do Repositório
 
@@ -285,10 +288,16 @@ marathon-case-data-master/
 │   │   ├── providers.tf
 │   │   ├── variables.tf
 │   │   ├── outputs.tf
-│   │   └── terraform.tfvars.example
+│   │   ├── terraform.tfvars.example
+│   │   └── databricks/
+│   │       └── main.tf       # SQL Warehouse e AI/BI Dashboard
 │   ├── main.bicep           # alternativa Azure-only
 │   ├── resources.bicep
 │   └── parameters.json
+├── dashboard/
+│   ├── app.py                       # consumidor Streamlit opcional
+│   └── databricks/
+│       └── marathon_dashboard.lvdash.json
 ├── notebooks/
 │   ├── 00_bronze_orchestrator.py
 │   ├── 01_bronze_ingestion.py
@@ -314,7 +323,7 @@ marathon-case-data-master/
 ## VI. Melhorias e Considerações Finais
 
 - Implementar testes de qualidade automatizados na Silver (Great Expectations / Delta Live Tables expectations).
-- Adicionar dashboard de observabilidade com custo/tempo por run a partir de `monitoring.data_quality_log`.
+- Expandir o dashboard de observabilidade com métricas de custo por run e alertas operacionais.
 - Otimizar o particionamento das tabelas Gold conforme os padrões de acesso do dashboard.
 - Expandir as fontes para Boston, Tóquio e outras majors, aproveitando a arquitetura extensível.
 - Buscar datas exatas das provas via API de calendário/esportes para substituir a estimativa heurística usada no `04_weather_enrichment`.

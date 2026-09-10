@@ -15,6 +15,7 @@ Fluxo:
 10. Sobe CSVs
 11. Implanta notebooks no workspace
 12. Cria workflow
+13. Cria SQL Warehouse e dashboard AI/BI
 
 Progresso salvo em .setup_state.json (nao versionado).
 """
@@ -41,6 +42,7 @@ ENV_FILE = PROJECT_ROOT / ".env"
 ENV_EXAMPLE = PROJECT_ROOT / ".env.example"
 CONFIG_FILE = PROJECT_ROOT / "config" / "config.yaml"
 TERRAFORM_DIR = PROJECT_ROOT / "infrastructure" / "terraform"
+DATABRICKS_TERRAFORM_DIR = TERRAFORM_DIR / "databricks"
 
 DATABRICKS_AAD_RESOURCE = "2ff814a6-3304-4ab8-85cb-cd0e6f879c1d"
 
@@ -57,6 +59,7 @@ STEPS = [
     "upload_raw_data",
     "deploy_notebooks",
     "create_workflow",
+    "create_dashboard",
 ]
 
 
@@ -111,6 +114,29 @@ def find_executable(name):
         if path:
             return path
     return shutil.which(name)
+
+
+def find_databricks_terraform():
+    candidates = [find_executable("terraform")]
+    if os.name == "nt":
+        winget_root = Path.home() / "AppData" / "Local" / "Microsoft" / "WinGet" / "Packages"
+        candidates.extend(winget_root.glob("Hashicorp.Terraform_*/*terraform.exe"))
+
+    for candidate in candidates:
+        if not candidate:
+            continue
+        result = subprocess.run(
+            [str(candidate), "version", "-json"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            continue
+        platform = json.loads(result.stdout).get("platform", "")
+        if platform != "windows_386":
+            return str(candidate)
+
+    raise RuntimeError("O provider Databricks requer Terraform 64-bit. Instale a versao Windows AMD64.")
 
 
 def run_command(cmd, capture=True, check=True, shell=False, cwd=None):
@@ -758,6 +784,42 @@ def step_create_workflow(state):
     mark_completed(state, "create_workflow")
 
 
+def step_create_dashboard(state):
+    print_step(STEPS.index("create_dashboard") + 1, "Criando SQL Warehouse e dashboard AI/BI")
+
+    host = f"https://{state['outputs']['databricks_workspace_url']}"
+    token = os.environ.get("DATABRICKS_TOKEN")
+    if not token or not _test_jobs_token(host, token):
+        raise RuntimeError("DATABRICKS_TOKEN invalido ou sem acesso ao workspace.")
+    if not DATABRICKS_TERRAFORM_DIR.exists():
+        raise RuntimeError(f"Terraform do Databricks nao encontrado: {DATABRICKS_TERRAFORM_DIR}")
+
+    terraform = find_databricks_terraform()
+    os.environ["DATABRICKS_HOST"] = host
+    run_command([terraform, "init", "-input=false"], capture=False, check=True, cwd=str(DATABRICKS_TERRAFORM_DIR))
+    run_command([terraform, "apply", "-auto-approve", "-input=false"], capture=False, check=True, cwd=str(DATABRICKS_TERRAFORM_DIR))
+
+    outputs_json = run_command([terraform, "output", "-json"], capture=True, check=True, cwd=str(DATABRICKS_TERRAFORM_DIR))
+    outputs = json.loads(outputs_json)
+    warehouse_id = outputs["sql_warehouse_id"]["value"]
+    http_path = outputs["sql_warehouse_http_path"]["value"]
+    dashboard_id = outputs["dashboard_id"]["value"]
+    dashboard_url = f"{host}/dashboardsv3/{dashboard_id}/published"
+
+    os.environ["DATABRICKS_HTTP_PATH"] = http_path
+    update_env_file(["DATABRICKS_HTTP_PATH"])
+    state["outputs"].update({
+        "sql_warehouse_id": warehouse_id,
+        "sql_warehouse_http_path": http_path,
+        "dashboard_id": dashboard_id,
+        "dashboard_url": dashboard_url,
+    })
+    save_state(state)
+    print_ok(f"SQL Warehouse: {warehouse_id}")
+    print_ok(f"Dashboard publicado: {dashboard_url}")
+    mark_completed(state, "create_dashboard")
+
+
 def run_step(state, step_name):
     if is_completed(state, step_name):
         print_step(STEPS.index(step_name) + 1, f"Pulando '{step_name}' (ja concluido)")
@@ -777,6 +839,8 @@ def main():
     parser.add_argument("--reset", action="store_true", help="Apaga o estado e reinicia do zero")
     args = parser.parse_args()
 
+    if ENV_FILE.exists():
+        load_dotenv(ENV_FILE, override=True)
     state = load_state()
     if args.reset:
         print_warn("Resetando estado do setup")
@@ -796,6 +860,8 @@ def main():
     print_info("Para testar o trigger, faca upload de um novo CSV em raw/ via:")
     print_info("  python scripts/upload_raw_data.py")
     print_info("Ou acesse Workflows no Databricks e rode o job manualmente.")
+    if state["outputs"].get("dashboard_url"):
+        print_info(f"Dashboard AI/BI: {state['outputs']['dashboard_url']}")
 
 
 if __name__ == "__main__":
