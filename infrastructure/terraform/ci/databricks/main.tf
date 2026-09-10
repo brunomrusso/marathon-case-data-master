@@ -14,7 +14,8 @@ terraform {
 provider "databricks" {}
 
 module "workspace" {
-  source = "../../databricks"
+  source       = "../../databricks"
+  catalog_name = "marathon_prod"
 }
 
 output "sql_warehouse_id" {

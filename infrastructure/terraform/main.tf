@@ -1,6 +1,6 @@
 locals {
   resource_group_name           = "rg-${var.project_name}-${var.environment}"
-  storage_name                  = "st${var.project_name}${var.environment}"
+  storage_name                  = coalesce(var.storage_account_name_override, "st${var.project_name}${var.environment}")
   databricks_name               = "dbw-${var.project_name}-${var.environment}"
   keyvault_name                 = "kv-${var.project_name}-${var.environment}"
   access_connector              = "ac-${var.project_name}-${var.environment}-v2"

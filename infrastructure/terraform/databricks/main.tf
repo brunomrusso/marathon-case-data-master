@@ -9,6 +9,11 @@ terraform {
   }
 }
 
+variable "catalog_name" {
+  type    = string
+  default = "marathon"
+}
+
 resource "databricks_sql_endpoint" "dashboard" {
   name                      = "marathon-dashboard-warehouse"
   cluster_size              = "2X-Small"
@@ -27,7 +32,7 @@ resource "databricks_dashboard" "marathon" {
   file_path         = "${path.module}/../../../dashboard/databricks/marathon_dashboard.lvdash.json"
   embed_credentials = true
   parent_path       = "/Shared/marathon-case"
-  dataset_catalog   = "marathon"
+  dataset_catalog   = var.catalog_name
   dataset_schema    = "gold"
 }
 

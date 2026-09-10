@@ -129,7 +129,7 @@ def assign_workspace_to_metastore(account_id, token, workspace_id, metastore_id)
     raise RuntimeError(f"Erro ao atribuir metastore: {resp.status_code} - {resp.text} | {resp2.status_code} - {resp2.text}")
 
 
-def create_storage_credential(host, token, name, access_connector_id):
+def create_storage_credential(host, token, name, external_location_name, access_connector_id):
     print(f"Garantindo que a storage credential '{name}' esteja correta...")
     current = workspace_api("GET", host, token, f"/api/2.1/unity-catalog/storage-credentials/{name}")
     if current.status_code == 200:
@@ -137,7 +137,7 @@ def create_storage_credential(host, token, name, access_connector_id):
         if current_connector.lower() == access_connector_id.lower():
             print(f"Storage credential '{name}' ja aponta para o Access Connector atual")
             return False
-        del_ext = workspace_api("DELETE", host, token, "/api/2.1/unity-catalog/external-locations/marathon-external-location", params={"force": "true"})
+        del_ext = workspace_api("DELETE", host, token, f"/api/2.1/unity-catalog/external-locations/{external_location_name}", params={"force": "true"})
         if del_ext.status_code not in (200, 204, 404):
             raise RuntimeError(f"Erro ao remover external location antiga: {del_ext.status_code} - {del_ext.text}")
         del_resp = workspace_api("DELETE", host, token, f"/api/2.1/unity-catalog/storage-credentials/{name}", params={"force": "true"})
@@ -279,8 +279,11 @@ def main():
     if not catalog_name:
         catalog_name = "marathon"
     print(f"Criando recursos do Unity Catalog (catalogo: {catalog_name})...")
-    credential_recreated = create_storage_credential(host, token, "marathon-storage-credential", access_connector_id)
-    create_external_location(host, token, "marathon-external-location", external_url, "marathon-storage-credential")
+    resource_prefix = catalog_name.replace("_", "-")
+    credential_name = f"{resource_prefix}-storage-credential"
+    external_location_name = f"{resource_prefix}-external-location"
+    credential_recreated = create_storage_credential(host, token, credential_name, external_location_name, access_connector_id)
+    create_external_location(host, token, external_location_name, external_url, credential_name)
     create_catalog(host, token, catalog_name, f"{external_url}catalogs/{catalog_name}/", force_recreate=credential_recreated)
     grant_catalog_read_access(host, token, catalog_name)
     print(f"CATALOG_NAME={catalog_name}")

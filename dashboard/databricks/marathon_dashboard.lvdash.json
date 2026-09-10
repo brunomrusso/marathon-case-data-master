@@ -4,63 +4,63 @@
       "name": "summary",
       "displayName": "Indicadores gerais",
       "queryLines": [
-        "SELECT SUM(total_athletes) AS total_finishers, COUNT(DISTINCT year) AS total_editions, COUNT(DISTINCT source) AS total_marathons, ROUND(AVG(avg_finish_time_sec) / 60, 1) AS avg_finish_time_min, CONCAT(LPAD(CAST(FLOOR(AVG(avg_finish_time_sec) / 3600) AS STRING), 2, '0'), ':', LPAD(CAST(FLOOR(PMOD(AVG(avg_finish_time_sec), 3600) / 60) AS STRING), 2, '0')) AS avg_finish_time_hm FROM marathon.gold.kpi_summary"
+        "SELECT SUM(total_athletes) AS total_finishers, COUNT(DISTINCT year) AS total_editions, COUNT(DISTINCT source) AS total_marathons, ROUND(AVG(avg_finish_time_sec) / 60, 1) AS avg_finish_time_min, CONCAT(LPAD(CAST(FLOOR(AVG(avg_finish_time_sec) / 3600) AS STRING), 2, '0'), ':', LPAD(CAST(FLOOR(PMOD(AVG(avg_finish_time_sec), 3600) / 60) AS STRING), 2, '0')) AS avg_finish_time_hm FROM kpi_summary"
       ]
     },
     {
       "name": "finishers_by_year",
       "displayName": "Concluintes por ano e maratona",
       "queryLines": [
-        "SELECT year, source, SUM(total_finishers) AS total_finishers FROM marathon.gold.finishers_by_year GROUP BY year, source ORDER BY year, source"
+        "SELECT year, source, SUM(total_finishers) AS total_finishers FROM finishers_by_year GROUP BY year, source ORDER BY year, source"
       ]
     },
     {
       "name": "top_countries",
       "displayName": "Principais paises",
       "queryLines": [
-        "SELECT country, SUM(total_athletes) AS total_athletes FROM marathon.gold.top_countries WHERE country IS NOT NULL GROUP BY country ORDER BY total_athletes DESC LIMIT 20"
+        "SELECT country, SUM(total_athletes) AS total_athletes FROM top_countries WHERE country IS NOT NULL GROUP BY country ORDER BY total_athletes DESC LIMIT 20"
       ]
     },
     {
       "name": "demographics",
       "displayName": "Perfil demografico",
       "queryLines": [
-        "SELECT age_group, gender, SUM(total_athletes) AS total_athletes, ROUND(AVG(avg_finish_time_sec) / 60, 1) AS avg_finish_time_min, CONCAT(LPAD(CAST(FLOOR(AVG(avg_finish_time_sec) / 3600) AS STRING), 2, '0'), ':', LPAD(CAST(FLOOR(PMOD(AVG(avg_finish_time_sec), 3600) / 60) AS STRING), 2, '0')) AS avg_finish_time_hm FROM marathon.gold.age_gender_profile WHERE age_group IS NOT NULL GROUP BY age_group, gender ORDER BY CASE WHEN age_group = '0-17' THEN 0 WHEN age_group = '18-39' THEN 18 ELSE CAST(SPLIT(age_group, '-')[0] AS INT) END, gender"
+        "SELECT age_group, gender, SUM(total_athletes) AS total_athletes, ROUND(AVG(avg_finish_time_sec) / 60, 1) AS avg_finish_time_min, CONCAT(LPAD(CAST(FLOOR(AVG(avg_finish_time_sec) / 3600) AS STRING), 2, '0'), ':', LPAD(CAST(FLOOR(PMOD(AVG(avg_finish_time_sec), 3600) / 60) AS STRING), 2, '0')) AS avg_finish_time_hm FROM age_gender_profile WHERE age_group IS NOT NULL GROUP BY age_group, gender ORDER BY CASE WHEN age_group = '0-17' THEN 0 WHEN age_group = '18-39' THEN 18 ELSE CAST(SPLIT(age_group, '-')[0] AS INT) END, gender"
       ]
     },
     {
       "name": "weather",
       "displayName": "Clima e performance",
       "queryLines": [
-        "SELECT source, year, temperature_mean_c, precipitation_mm, ROUND(avg_finish_time_sec / 60, 1) AS avg_finish_time_min FROM marathon.gold.weather_impact WHERE temperature_mean_c IS NOT NULL ORDER BY year, source"
+        "SELECT source, year, temperature_mean_c, precipitation_mm, ROUND(avg_finish_time_sec / 60, 1) AS avg_finish_time_min FROM weather_impact WHERE temperature_mean_c IS NOT NULL ORDER BY year, source"
       ]
     },
     {
       "name": "country_performance",
       "displayName": "Performance por pais",
       "queryLines": [
-        "SELECT country, total_athletes, ROUND(avg_finish_time_sec / 60, 1) AS avg_finish_time_min, CONCAT(LPAD(CAST(FLOOR(avg_finish_time_sec / 3600) AS STRING), 2, '0'), ':', LPAD(CAST(FLOOR(PMOD(avg_finish_time_sec, 3600) / 60) AS STRING), 2, '0')) AS avg_finish_time_hm FROM marathon.gold.athletes_by_country WHERE country IS NOT NULL ORDER BY total_athletes DESC LIMIT 30"
+        "SELECT country, total_athletes, ROUND(avg_finish_time_sec / 60, 1) AS avg_finish_time_min, CONCAT(LPAD(CAST(FLOOR(avg_finish_time_sec / 3600) AS STRING), 2, '0'), ':', LPAD(CAST(FLOOR(PMOD(avg_finish_time_sec, 3600) / 60) AS STRING), 2, '0')) AS avg_finish_time_hm FROM athletes_by_country WHERE country IS NOT NULL ORDER BY total_athletes DESC LIMIT 30"
       ]
     },
     {
       "name": "times_metrics",
       "displayName": "Distribuicao de tempos",
       "queryLines": [
-        "SELECT source, year, gender, age_group, ROUND(mean / 60, 1) AS mean_time_min, CONCAT(LPAD(CAST(FLOOR(min / 3600) AS STRING), 2, '0'), ':', LPAD(CAST(FLOOR(PMOD(min, 3600) / 60) AS STRING), 2, '0')) AS min_time_hm, CONCAT(LPAD(CAST(FLOOR(q1 / 3600) AS STRING), 2, '0'), ':', LPAD(CAST(FLOOR(PMOD(q1, 3600) / 60) AS STRING), 2, '0')) AS q1_time_hm, CONCAT(LPAD(CAST(FLOOR(median / 3600) AS STRING), 2, '0'), ':', LPAD(CAST(FLOOR(PMOD(median, 3600) / 60) AS STRING), 2, '0')) AS median_time_hm, CONCAT(LPAD(CAST(FLOOR(mean / 3600) AS STRING), 2, '0'), ':', LPAD(CAST(FLOOR(PMOD(mean, 3600) / 60) AS STRING), 2, '0')) AS mean_time_hm, CONCAT(LPAD(CAST(FLOOR(q3 / 3600) AS STRING), 2, '0'), ':', LPAD(CAST(FLOOR(PMOD(q3, 3600) / 60) AS STRING), 2, '0')) AS q3_time_hm, CONCAT(LPAD(CAST(FLOOR(max / 3600) AS STRING), 2, '0'), ':', LPAD(CAST(FLOOR(PMOD(max, 3600) / 60) AS STRING), 2, '0')) AS max_time_hm FROM marathon.gold.times_distribution WHERE age_group IS NOT NULL"
+        "SELECT source, year, gender, age_group, ROUND(mean / 60, 1) AS mean_time_min, CONCAT(LPAD(CAST(FLOOR(min / 3600) AS STRING), 2, '0'), ':', LPAD(CAST(FLOOR(PMOD(min, 3600) / 60) AS STRING), 2, '0')) AS min_time_hm, CONCAT(LPAD(CAST(FLOOR(q1 / 3600) AS STRING), 2, '0'), ':', LPAD(CAST(FLOOR(PMOD(q1, 3600) / 60) AS STRING), 2, '0')) AS q1_time_hm, CONCAT(LPAD(CAST(FLOOR(median / 3600) AS STRING), 2, '0'), ':', LPAD(CAST(FLOOR(PMOD(median, 3600) / 60) AS STRING), 2, '0')) AS median_time_hm, CONCAT(LPAD(CAST(FLOOR(mean / 3600) AS STRING), 2, '0'), ':', LPAD(CAST(FLOOR(PMOD(mean, 3600) / 60) AS STRING), 2, '0')) AS mean_time_hm, CONCAT(LPAD(CAST(FLOOR(q3 / 3600) AS STRING), 2, '0'), ':', LPAD(CAST(FLOOR(PMOD(q3, 3600) / 60) AS STRING), 2, '0')) AS q3_time_hm, CONCAT(LPAD(CAST(FLOOR(max / 3600) AS STRING), 2, '0'), ':', LPAD(CAST(FLOOR(PMOD(max, 3600) / 60) AS STRING), 2, '0')) AS max_time_hm FROM times_distribution WHERE age_group IS NOT NULL"
       ]
     },
     {
       "name": "marathon_comparison",
       "displayName": "Comparacao entre maratonas",
       "queryLines": [
-        "SELECT year, 'Berlin' AS source, berlin_finishers AS finishers, ROUND(berlin_avg_time / 60, 1) AS avg_time_min FROM marathon.gold.marathon_comparison WHERE berlin_finishers IS NOT NULL UNION ALL SELECT year, 'Chicago', chicago_finishers, ROUND(chicago_avg_time / 60, 1) FROM marathon.gold.marathon_comparison WHERE chicago_finishers IS NOT NULL UNION ALL SELECT year, 'London', london_finishers, ROUND(london_avg_time / 60, 1) FROM marathon.gold.marathon_comparison WHERE london_finishers IS NOT NULL UNION ALL SELECT year, 'New York', nyc_finishers, ROUND(nyc_avg_time / 60, 1) FROM marathon.gold.marathon_comparison WHERE nyc_finishers IS NOT NULL ORDER BY year, source"
+        "SELECT year, 'Berlin' AS source, berlin_finishers AS finishers, ROUND(berlin_avg_time / 60, 1) AS avg_time_min FROM marathon_comparison WHERE berlin_finishers IS NOT NULL UNION ALL SELECT year, 'Chicago', chicago_finishers, ROUND(chicago_avg_time / 60, 1) FROM marathon_comparison WHERE chicago_finishers IS NOT NULL UNION ALL SELECT year, 'London', london_finishers, ROUND(london_avg_time / 60, 1) FROM marathon_comparison WHERE london_finishers IS NOT NULL UNION ALL SELECT year, 'New York', nyc_finishers, ROUND(nyc_avg_time / 60, 1) FROM marathon_comparison WHERE nyc_finishers IS NOT NULL ORDER BY year, source"
       ]
     },
     {
       "name": "quality",
       "displayName": "Qualidade e observabilidade",
       "queryLines": [
-        "SELECT recorded_at, layer, step, status, row_count_in, row_count_out, rejected_records, schema_drift_flag, execution_time_sec, run_id, batch_id FROM marathon.monitoring.data_quality_log ORDER BY recorded_at DESC LIMIT 100"
+        "SELECT recorded_at, layer, step, status, row_count_in, row_count_out, rejected_records, schema_drift_flag, execution_time_sec, run_id, batch_id FROM monitoring.data_quality_log ORDER BY recorded_at DESC LIMIT 100"
       ]
     }
   ],

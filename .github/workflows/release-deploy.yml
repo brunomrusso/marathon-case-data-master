@@ -25,6 +25,7 @@ jobs:
       TF_BACKEND_CONTAINER: ${{ vars.TF_BACKEND_CONTAINER }}
       SEED_STORAGE_ACCOUNT: ${{ vars.SEED_STORAGE_ACCOUNT }}
       SEED_CONTAINER: ${{ vars.SEED_CONTAINER }}
+      CATALOG_NAME: marathon_prod
       MARATHON_TERRAFORM_DIR: ${{ github.workspace }}/infrastructure/terraform/ci/azure
       MARATHON_DATABRICKS_TERRAFORM_DIR: ${{ github.workspace }}/infrastructure/terraform/ci/databricks
 

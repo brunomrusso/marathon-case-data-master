@@ -504,14 +504,15 @@ def step_databricks_secrets(state):
     resp.raise_for_status()
     print_ok("Segredo 'config_yaml' salvo")
 
+    catalog_name = os.environ.get("CATALOG_NAME", "marathon")
     resp = requests.post(
         f"{host}/api/2.0/secrets/put",
         headers=get_databricks_headers(token),
-        json={"scope": "marathon-scope", "key": "catalog_name", "string_value": "marathon"},
+        json={"scope": "marathon-scope", "key": "catalog_name", "string_value": catalog_name},
         timeout=30,
     )
     resp.raise_for_status()
-    print_ok("Segredo 'catalog_name' salvo (marathon)")
+    print_ok(f"Segredo 'catalog_name' salvo ({catalog_name})")
 
     mark_completed(state, "databricks_secrets")
 

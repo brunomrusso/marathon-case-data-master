@@ -258,7 +258,7 @@ streamlit run dashboard/app.py
 
 ### 14. CI/CD federado com GitHub Actions
 
-A esteira usa GitHub OIDC e uma User Assigned Managed Identity. Não existem client secrets, PATs ou chaves de Storage no GitHub. Pull requests e pushes na `main` executam somente validações locais; tags `v*` acionam o provisionamento completo no environment protegido `production`.
+A esteira usa GitHub OIDC e uma User Assigned Managed Identity. Não existem client secrets, PATs ou chaves de Storage no GitHub. Pull requests e pushes na `main` executam somente validações locais; tags `v*` acionam o provisionamento completo no environment protegido `production`. Para isolar ownership no metastore compartilhado, o setup local usa o catálogo `marathon` e a esteira usa `marathon_prod`, sem alterar o nome visual do dashboard.
 
 #### 14.1 Bootstrap único
 
