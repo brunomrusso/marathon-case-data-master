@@ -35,7 +35,7 @@ import requests
 import yaml
 from dotenv import load_dotenv
 
-from databricks_auth import get_databricks_token
+from databricks_auth import get_databricks_headers, get_databricks_token
 
 
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -43,8 +43,8 @@ STATE_FILE = PROJECT_ROOT / ".setup_state.json"
 ENV_FILE = PROJECT_ROOT / ".env"
 ENV_EXAMPLE = PROJECT_ROOT / ".env.example"
 CONFIG_FILE = PROJECT_ROOT / "config" / "config.yaml"
-TERRAFORM_DIR = PROJECT_ROOT / "infrastructure" / "terraform"
-DATABRICKS_TERRAFORM_DIR = TERRAFORM_DIR / "databricks"
+TERRAFORM_DIR = Path(os.environ.get("MARATHON_TERRAFORM_DIR", PROJECT_ROOT / "infrastructure" / "terraform"))
+DATABRICKS_TERRAFORM_DIR = Path(os.environ.get("MARATHON_DATABRICKS_TERRAFORM_DIR", PROJECT_ROOT / "infrastructure" / "terraform" / "databricks"))
 
 STEPS = [
     "prerequisites",
@@ -137,6 +137,20 @@ def find_databricks_terraform():
             return str(candidate)
 
     raise RuntimeError("O provider Databricks requer Terraform 64-bit. Instale a versao Windows AMD64.")
+
+
+def terraform_init_command(terraform, state_key):
+    command = [terraform, "init", "-input=false"]
+    backend = {
+        "resource_group_name": os.environ.get("TF_BACKEND_RESOURCE_GROUP"),
+        "storage_account_name": os.environ.get("TF_BACKEND_STORAGE_ACCOUNT"),
+        "container_name": os.environ.get("TF_BACKEND_CONTAINER"),
+    }
+    if all(backend.values()):
+        for key, value in backend.items():
+            command.append(f"-backend-config={key}={value}")
+        command.extend([f"-backend-config=key={state_key}", "-backend-config=use_azuread_auth=true"])
+    return command
 
 
 def run_command(cmd, capture=True, check=True, shell=False, cwd=None):
@@ -272,7 +286,7 @@ def step_deploy_terraform(state):
         raise RuntimeError(f"Diretorio Terraform nao encontrado: {TERRAFORM_DIR}")
 
     print_info("terraform init")
-    run_command(["terraform", "init"], capture=False, check=True, cwd=str(TERRAFORM_DIR))
+    run_command(terraform_init_command("terraform", "platform.tfstate"), capture=False, check=True, cwd=str(TERRAFORM_DIR))
 
     print_info("terraform apply (pode levar 5-10 minutos)")
     run_command(["terraform", "apply", "-auto-approve"], capture=False, check=True, cwd=str(TERRAFORM_DIR))
@@ -328,7 +342,8 @@ def step_update_config(state):
     print_ok(f"DATABRICKS_HOST: {host}")
 
     os.environ["DATABRICKS_WORKSPACE_ID"] = str(outputs.get("workspace_id"))
-    update_env_file(["DATABRICKS_WORKSPACE_ID"])
+    os.environ["DATABRICKS_AZURE_RESOURCE_ID"] = outputs.get("databricks_workspace_resource_id", "")
+    update_env_file(["DATABRICKS_WORKSPACE_ID", "DATABRICKS_AZURE_RESOURCE_ID"])
     print_ok(f"DATABRICKS_WORKSPACE_ID: {outputs.get('workspace_id')}")
 
     os.environ["ACCESS_CONNECTOR_ID"] = outputs.get("access_connector_id")
@@ -367,7 +382,7 @@ def step_account_id(state):
     print_info(f"Workspace ID usado: {workspace_id}")
     resp = requests.get(
         f"{host}/api/2.1/unity-catalog/catalogs",
-        headers={"Authorization": f"Bearer {token}"},
+        headers=get_databricks_headers(token),
         timeout=30,
     )
     print_info(f"Resposta: {resp.status_code} - {resp.text[:200]}")
@@ -417,7 +432,7 @@ def step_account_id(state):
 def _test_uc_token(host, token):
     resp = requests.get(
         f"{host}/api/2.1/unity-catalog/catalogs",
-        headers={"Authorization": f"Bearer {token}"},
+        headers=get_databricks_headers(token),
         timeout=30,
     )
     return resp.status_code == 200
@@ -454,7 +469,7 @@ def step_databricks_secrets(state):
 
     resp = requests.post(
         f"{host}/api/2.0/secrets/scopes/create",
-        headers={"Authorization": f"Bearer {token}"},
+        headers=get_databricks_headers(token),
         json={"scope": "marathon-scope", "initial_manage_principal": "users"},
         timeout=30,
     )
@@ -468,7 +483,7 @@ def step_databricks_secrets(state):
     config_yaml = CONFIG_FILE.read_text(encoding="utf-8")
     resp = requests.post(
         f"{host}/api/2.0/secrets/put",
-        headers={"Authorization": f"Bearer {token}"},
+        headers=get_databricks_headers(token),
         json={"scope": "marathon-scope", "key": "config_yaml", "string_value": config_yaml},
         timeout=30,
     )
@@ -477,7 +492,7 @@ def step_databricks_secrets(state):
 
     resp = requests.post(
         f"{host}/api/2.0/secrets/put",
-        headers={"Authorization": f"Bearer {token}"},
+        headers=get_databricks_headers(token),
         json={"scope": "marathon-scope", "key": "catalog_name", "string_value": "marathon"},
         timeout=30,
     )
@@ -569,7 +584,7 @@ def step_upload_raw_data(state):
 def _test_jobs_token(host, token):
     resp = requests.get(
         f"{host}/api/2.1/jobs/list?limit=1",
-        headers={"Authorization": f"Bearer {token}"},
+        headers=get_databricks_headers(token),
         timeout=30,
     )
     return resp.status_code in (200, 400)  # 400 = bad request mas token valido; 403 = invalido
@@ -579,7 +594,7 @@ def _workspace_object_exists(host, token, object_path):
     """Verifica se um objeto existe no workspace (Workspace API v2)."""
     resp = requests.get(
         f"{host}/api/2.0/workspace/get-status",
-        headers={"Authorization": f"Bearer {token}"},
+        headers=get_databricks_headers(token),
         params={"path": object_path},
         timeout=30,
     )
@@ -598,7 +613,7 @@ def step_deploy_notebooks(state):
     if not api_root.startswith("/"):
         api_root = f"/{api_root}"
     notebooks_root = f"{api_root}/notebooks"
-    headers = {"Authorization": f"Bearer {token}"}
+    headers = get_databricks_headers(token)
 
     resp = requests.post(
         f"{host}/api/2.0/workspace/mkdirs",
@@ -685,14 +700,22 @@ def step_create_dashboard(state):
     print_step(STEPS.index("create_dashboard") + 1, "Criando SQL Warehouse e dashboard AI/BI")
 
     host = f"https://{state['outputs']['databricks_workspace_url']}"
-    configure_databricks_token(host, _test_jobs_token)
+    token = configure_databricks_token(host, _test_jobs_token)
     if not DATABRICKS_TERRAFORM_DIR.exists():
         raise RuntimeError(f"Terraform do Databricks nao encontrado: {DATABRICKS_TERRAFORM_DIR}")
 
     terraform = find_databricks_terraform()
     os.environ["DATABRICKS_HOST"] = host
-    run_command([terraform, "init", "-input=false"], capture=False, check=True, cwd=str(DATABRICKS_TERRAFORM_DIR))
-    run_command([terraform, "apply", "-auto-approve", "-input=false"], capture=False, check=True, cwd=str(DATABRICKS_TERRAFORM_DIR))
+    use_azure_cli = bool(os.environ.get("DATABRICKS_AZURE_RESOURCE_ID"))
+    if use_azure_cli:
+        os.environ.pop("DATABRICKS_TOKEN", None)
+        os.environ["DATABRICKS_AUTH_TYPE"] = "azure-cli"
+    try:
+        run_command(terraform_init_command(terraform, "databricks.tfstate"), capture=False, check=True, cwd=str(DATABRICKS_TERRAFORM_DIR))
+        run_command([terraform, "apply", "-auto-approve", "-input=false"], capture=False, check=True, cwd=str(DATABRICKS_TERRAFORM_DIR))
+    finally:
+        os.environ["DATABRICKS_TOKEN"] = token
+        os.environ.pop("DATABRICKS_AUTH_TYPE", None)
 
     outputs_json = run_command([terraform, "output", "-json"], capture=True, check=True, cwd=str(DATABRICKS_TERRAFORM_DIR))
     outputs = json.loads(outputs_json)

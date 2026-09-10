@@ -1,0 +1,72 @@
+name: Release Deploy
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: marathon-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Provision and deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    environment: production
+    env:
+      TF_BACKEND_RESOURCE_GROUP: ${{ vars.TF_BACKEND_RESOURCE_GROUP }}
+      TF_BACKEND_STORAGE_ACCOUNT: ${{ vars.TF_BACKEND_STORAGE_ACCOUNT }}
+      TF_BACKEND_CONTAINER: ${{ vars.TF_BACKEND_CONTAINER }}
+      SEED_STORAGE_ACCOUNT: ${{ vars.SEED_STORAGE_ACCOUNT }}
+      SEED_CONTAINER: ${{ vars.SEED_CONTAINER }}
+      MARATHON_TERRAFORM_DIR: ${{ github.workspace }}/infrastructure/terraform/ci/azure
+      MARATHON_DATABRICKS_TERRAFORM_DIR: ${{ github.workspace }}/infrastructure/terraform/ci/databricks
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Azure login with OIDC
+        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd
+        with:
+          terraform_version: 1.15.8
+          terraform_wrapper: false
+
+      - name: Set up Python
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download immutable seed data
+        run: |
+          mkdir -p data/raw
+          az storage blob download-batch \
+            --account-name "$SEED_STORAGE_ACCOUNT" \
+            --source "$SEED_CONTAINER" \
+            --destination data/raw \
+            --pattern "*.csv" \
+            --overwrite true \
+            --auth-mode login
+
+      - name: Provision platform and workspace assets
+        run: python scripts/setup_all.py
+
+      - name: Run data pipeline
+        run: python scripts/run_databricks_workflow.py

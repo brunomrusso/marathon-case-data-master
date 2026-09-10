@@ -26,7 +26,7 @@ import requests
 import yaml
 from dotenv import load_dotenv
 
-from databricks_auth import get_databricks_token
+from databricks_auth import get_databricks_headers, get_databricks_token
 
 
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -39,7 +39,8 @@ if ENV_FILE.exists():
 
 def databricks_api(method, host, token, path, json_data=None, params=None, timeout=30, retries=5):
     url = f"{host.rstrip('/')}{path}"
-    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    headers = get_databricks_headers(token) if "accounts.azuredatabricks.net" not in host else {"Authorization": f"Bearer {token}"}
+    headers["Content-Type"] = "application/json"
     for attempt in range(retries):
         if method == "GET":
             resp = requests.get(url, headers=headers, params=params, timeout=timeout)

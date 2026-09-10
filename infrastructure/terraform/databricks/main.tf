@@ -9,8 +9,6 @@ terraform {
   }
 }
 
-provider "databricks" {}
-
 resource "databricks_sql_endpoint" "dashboard" {
   name                      = "marathon-dashboard-warehouse"
   cluster_size              = "2X-Small"

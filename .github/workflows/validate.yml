@@ -1,0 +1,52 @@
+name: Validate
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Set up Python
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Validate Python and dashboard JSON
+        run: |
+          python -m compileall -q scripts dashboard src
+          python -m json.tool dashboard/databricks/marathon_dashboard.lvdash.json > /dev/null
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd
+        with:
+          terraform_version: 1.15.8
+          terraform_wrapper: false
+
+      - name: Validate Terraform
+        shell: bash
+        run: |
+          set -euo pipefail
+          for directory in \
+            infrastructure/terraform \
+            infrastructure/terraform/databricks \
+            infrastructure/terraform/bootstrap \
+            infrastructure/terraform/ci/azure \
+            infrastructure/terraform/ci/databricks
+          do
+            terraform -chdir="$directory" init -backend=false -input=false
+            terraform -chdir="$directory" validate
+          done

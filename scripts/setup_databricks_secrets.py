@@ -3,7 +3,7 @@ import getpass
 import requests
 from pathlib import Path
 
-from databricks_auth import get_databricks_token
+from databricks_auth import get_databricks_headers, get_databricks_token
 
 
 def get_env_or_prompt(name, secret=False):
@@ -21,7 +21,7 @@ def main():
     host = get_env_or_prompt("DATABRICKS_HOST").rstrip("/")
     token = get_databricks_token()
 
-    headers = {"Authorization": f"Bearer {token}"}
+    headers = get_databricks_headers(token)
 
     # Criar scope
     resp = requests.post(f"{host}/api/2.0/secrets/scopes/create", headers=headers, json={

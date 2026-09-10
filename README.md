@@ -256,6 +256,53 @@ pip install -r requirements.txt
 streamlit run dashboard/app.py
 ```
 
+### 14. CI/CD federado com GitHub Actions
+
+A esteira usa GitHub OIDC e uma User Assigned Managed Identity. Não existem client secrets, PATs ou chaves de Storage no GitHub. Pull requests e pushes na `main` executam somente validações locais; tags `v*` acionam o provisionamento completo no environment protegido `production`.
+
+#### 14.1 Bootstrap único
+
+O bootstrap cria recursos persistentes que não fazem parte do ambiente descartável:
+
+- Resource Group `rg-marathon-bootstrap`;
+- identidade `id-marathon-github` e credencial federada para o environment `production`;
+- backend privado para os states Terraform;
+- Storage Seed privado para os CSVs brutos;
+- Resource Group vazio `rg-marathon-case`, onde a identidade recebe `Contributor` e `User Access Administrator`.
+
+Execute o bootstrap apenas com o ambiente descartável removido, pois ele passa a ser o proprietário do Resource Group alvo:
+
+```powershell
+az login
+python scripts/bootstrap_ci.py
+```
+
+O script aplica `infrastructure/terraform/bootstrap`, envia os CSVs locais para o Seed usando Entra ID e imprime as GitHub Actions Variables necessárias. O state do bootstrap permanece local e deve ser preservado em armazenamento administrativo seguro; ele não contém credenciais.
+
+#### 14.2 Configuração do GitHub
+
+Crie o environment `production`, restrinja-o a tags `v*` e, para uma implantação controlada, configure required reviewers. Cadastre nele como **Variables**, não Secrets, os valores impressos pelo bootstrap:
+
+- `AZURE_CLIENT_ID`
+- `AZURE_TENANT_ID`
+- `AZURE_SUBSCRIPTION_ID`
+- `TF_BACKEND_RESOURCE_GROUP`
+- `TF_BACKEND_STORAGE_ACCOUNT`
+- `TF_BACKEND_CONTAINER`
+- `SEED_STORAGE_ACCOUNT`
+- `SEED_CONTAINER`
+
+O workflow possui somente `contents: read` e `id-token: write`; as ações externas estão fixadas por commit SHA. O deploy não contém comandos `destroy` e usa concurrency lock para impedir duas implantações simultâneas.
+
+#### 14.3 Criar uma release
+
+```powershell
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+O workflow `.github/workflows/release-deploy.yml` autentica por OIDC, baixa o Seed privado, aplica os states remotos de Azure e Databricks, executa o setup sem interação e aguarda o workflow Bronze/Silver/Gold finalizar. O workflow `.github/workflows/validate.yml` não recebe identidade Azure.
+
 ## V. Estrutura do Repositório
 
 ```text
@@ -278,8 +325,9 @@ marathon-case-data-master/
 │   │   ├── variables.tf
 │   │   ├── outputs.tf
 │   │   ├── terraform.tfvars.example
-│   │   └── databricks/
-│   │       └── main.tf       # SQL Warehouse e AI/BI Dashboard
+│   │   ├── databricks/       # SQL Warehouse e AI/BI Dashboard
+│   │   ├── bootstrap/        # identidade OIDC, backend e Storage Seed
+│   │   └── ci/               # roots Terraform com backend remoto
 │   ├── main.bicep           # alternativa Azure-only
 │   ├── resources.bicep
 │   └── parameters.json
@@ -294,7 +342,10 @@ marathon-case-data-master/
 │   ├── 03_gold_aggregations.py
 │   ├── 04_weather_enrichment.py
 │   └── marathon_metadata.csv.example
+├── .github/workflows/            # validação e deploy por tag com OIDC
 ├── scripts/
+│   ├── bootstrap_ci.py           # bootstrap único da esteira
+│   ├── run_databricks_workflow.py
 │   ├── setup_all.py              # setup unificado (recomendado)
 │   ├── setup_unity_catalog.py    # cria/escolhe metastore e configura UC
 │   ├── setup.ps1                 # deploy do Bicep (alternativa)

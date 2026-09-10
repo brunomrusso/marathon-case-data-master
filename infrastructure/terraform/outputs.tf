@@ -1,5 +1,5 @@
 output "resource_group_name" {
-  value = azurerm_resource_group.this.name
+  value = local.resource_group_name
 }
 
 output "storage_account_name" {
@@ -20,6 +20,10 @@ output "databricks_workspace_url" {
 
 output "databricks_workspace_id" {
   value = azurerm_databricks_workspace.this.workspace_id
+}
+
+output "databricks_workspace_resource_id" {
+  value = azurerm_databricks_workspace.this.id
 }
 
 output "key_vault_name" {

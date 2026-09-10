@@ -16,6 +16,12 @@ variable "environment" {
   default     = "case"
 }
 
+variable "create_resource_group" {
+  description = "Cria o resource group; use false quando ele for gerenciado pelo bootstrap de CI/CD"
+  type        = bool
+  default     = true
+}
+
 variable "tags" {
   description = "Tags aplicadas aos recursos"
   type        = map(string)

@@ -4,7 +4,7 @@ import requests
 import yaml
 from pathlib import Path
 
-from databricks_auth import get_databricks_token
+from databricks_auth import get_databricks_headers, get_databricks_token
 
 
 def get_env_or_raise(name):
@@ -122,15 +122,31 @@ def main():
             "tasks": [{**task, "job_cluster_key": "marathon_cluster"} for task in tasks],
         }
 
-    resp = requests.post(
-        f"{host}/api/2.1/jobs/create",
-        headers={"Authorization": f"Bearer {token}"},
-        json=job,
+    headers = get_databricks_headers(token)
+    existing = requests.get(
+        f"{host}/api/2.1/jobs/list",
+        headers=headers,
+        params={"name": job["name"], "limit": 1},
     )
-    if resp.status_code != 200:
-        print(f"Erro ao criar workflow: {resp.status_code} - {resp.text}")
+    existing.raise_for_status()
+    jobs = existing.json().get("jobs", [])
+    if jobs:
+        job_id = jobs[0]["job_id"]
+        resp = requests.post(
+            f"{host}/api/2.1/jobs/reset",
+            headers=headers,
+            json={"job_id": job_id, "new_settings": job},
+        )
         resp.raise_for_status()
-    print(f"Workflow criado: job_id={resp.json()['job_id']}")
+        print(f"Workflow atualizado: job_id={job_id}")
+    else:
+        resp = requests.post(
+            f"{host}/api/2.1/jobs/create",
+            headers=headers,
+            json=job,
+        )
+        resp.raise_for_status()
+        print(f"Workflow criado: job_id={resp.json()['job_id']}")
 
 
 if __name__ == "__main__":

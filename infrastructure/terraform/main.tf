@@ -1,28 +1,40 @@
 locals {
-  resource_group_name = "rg-${var.project_name}-${var.environment}"
-  storage_name        = "st${var.project_name}${var.environment}"
-  databricks_name     = "dbw-${var.project_name}-${var.environment}"
-  keyvault_name       = "kv-${var.project_name}-${var.environment}"
-  access_connector    = "ac-${var.project_name}-${var.environment}-v2"
-  databricks_managed_rg = "databricks-rg-${var.project_name}-${var.environment}"
+  resource_group_name           = "rg-${var.project_name}-${var.environment}"
+  storage_name                  = "st${var.project_name}${var.environment}"
+  databricks_name               = "dbw-${var.project_name}-${var.environment}"
+  keyvault_name                 = "kv-${var.project_name}-${var.environment}"
+  access_connector              = "ac-${var.project_name}-${var.environment}-v2"
+  databricks_managed_rg         = "databricks-rg-${var.project_name}-${var.environment}"
   storage_blob_data_contributor = "ba92f5b4-2d11-453d-a403-e96b0029c9fe"
+  resource_group_id             = var.create_resource_group ? azurerm_resource_group.this[0].id : data.azurerm_resource_group.this[0].id
 }
 
 resource "azurerm_resource_group" "this" {
+  count    = var.create_resource_group ? 1 : 0
   name     = local.resource_group_name
   location = var.location
   tags     = var.tags
 }
 
+data "azurerm_resource_group" "this" {
+  count = var.create_resource_group ? 0 : 1
+  name  = local.resource_group_name
+}
+
+moved {
+  from = azurerm_resource_group.this
+  to   = azurerm_resource_group.this[0]
+}
+
 resource "azurerm_storage_account" "this" {
-  name                     = local.storage_name
-  resource_group_name      = azurerm_resource_group.this.name
-  location                 = var.location
-  account_tier             = "Standard"
-  account_replication_type = "LRS"
-  account_kind             = "StorageV2"
-  is_hns_enabled           = true
-  min_tls_version          = "TLS1_2"
+  name                            = local.storage_name
+  resource_group_name             = local.resource_group_name
+  location                        = var.location
+  account_tier                    = "Standard"
+  account_replication_type        = "LRS"
+  account_kind                    = "StorageV2"
+  is_hns_enabled                  = true
+  min_tls_version                 = "TLS1_2"
   allow_nested_items_to_be_public = false
 
   tags = var.tags
@@ -35,10 +47,10 @@ resource "azurerm_storage_container" "raw" {
 }
 
 resource "azurerm_databricks_workspace" "this" {
-  name                = local.databricks_name
-  resource_group_name = azurerm_resource_group.this.name
-  location            = var.location
-  sku                 = "premium"
+  name                        = local.databricks_name
+  resource_group_name         = local.resource_group_name
+  location                    = var.location
+  sku                         = "premium"
   managed_resource_group_name = local.databricks_managed_rg
 
   tags = var.tags
@@ -47,7 +59,7 @@ resource "azurerm_databricks_workspace" "this" {
 resource "azurerm_key_vault" "this" {
   name                       = local.keyvault_name
   location                   = var.location
-  resource_group_name        = azurerm_resource_group.this.name
+  resource_group_name        = local.resource_group_name
   tenant_id                  = data.azurerm_client_config.current.tenant_id
   sku_name                   = "standard"
   soft_delete_retention_days = 7
@@ -58,7 +70,7 @@ resource "azurerm_key_vault" "this" {
 
 resource "azurerm_databricks_access_connector" "this" {
   name                = local.access_connector
-  resource_group_name = azurerm_resource_group.this.name
+  resource_group_name = local.resource_group_name
   location            = var.location
   identity {
     type = "SystemAssigned"
@@ -98,7 +110,7 @@ resource "azurerm_role_assignment" "access_connector_storage_account" {
 }
 
 resource "azurerm_role_assignment" "access_connector_eventgrid" {
-  scope                = azurerm_resource_group.this.id
+  scope                = local.resource_group_id
   role_definition_name = "EventGrid EventSubscription Contributor"
   principal_id         = azurerm_databricks_access_connector.this.identity[0].principal_id
 }
