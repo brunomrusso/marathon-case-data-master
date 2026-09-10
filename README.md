@@ -73,7 +73,6 @@ Antes de começar, você precisa de:
 - **Terraform** instalado e no `PATH`: https://developer.hashicorp.com/terraform/install
   - No Windows, adicione a pasta do `terraform.exe` ao `PATH` (ou use `$env:Path += ";<caminho>"` no PowerShell).
 - Acesso aos datasets listados acima.
-- Uma conta **GitHub** e um **Personal Access Token** com escopo `repo` (para criar o Databricks Repo automaticamente).
 - Permissão de **Workspace Admin** no Databricks workspace que será criado.
 
 ### 2. Clonar e preparar o ambiente
@@ -112,26 +111,16 @@ Crie o arquivo `.env` a partir do exemplo:
 cp .env.example .env
 ```
 
-Edite o `.env` e preencha pelo menos:
+O `.env` pode manter apenas configurações opcionais:
 
 ```env
-GITHUB_TOKEN=ghp_...                                     # token com scope 'repo'
-GITHUB_USERNAME=seu-usuario-github                       # ex: brunomrusso
 ALERT_EMAIL=seu-email@exemplo.com                        # opcional
+DATABRICKS_WORKSPACE_ROOT=                               # opcional; padrao: /Workspace/Shared/marathon-case
 ```
 
-> `DATABRICKS_TOKEN` sera solicitado durante o setup. Nao precisa preencher antecipadamente.
+> `DATABRICKS_TOKEN` sera solicitado durante o setup. Nao precisa preencher antecipadamente. Nenhum token GitHub é necessário: os notebooks locais são implantados diretamente no workspace.
 
-#### Gerar os tokens
-
-**1) GitHub Personal Access Token (PAT)**
-
-- Acesse https://github.com/settings/tokens
-- Clique em **Generate new token (classic)**
-- Marque o escopo **repo**
-- Salve o token e cole no `.env` como `GITHUB_TOKEN`
-
-**2) Databricks Personal Access Token (PAT)**
+#### Gerar o Databricks Personal Access Token (PAT)
 
 O setup pede esse token no terminal. Para gerar:
 
@@ -150,10 +139,7 @@ Execute o setup unico:
 python scripts/setup_all.py
 ```
 
-Esse script orquestra todo o resto, com **duas acoes manuais**:
-
-1. Gerar e colar o **Databricks PAT**
-2. Confirmar/vincular o **Databricks Repo do GitHub** (se a API automática não sincronizar)
+Esse script orquestra todo o resto. Nesta etapa da automação, a única ação manual específica da plataforma é gerar e colar o **Databricks PAT** quando solicitado.
 
 Fluxo do script:
 
@@ -166,19 +152,11 @@ Fluxo do script:
 7. Salva secrets no Databricks
 8. Registra EventGrid provider e atribui roles ao Access Connector
 9. Sobe os CSVs para `raw/`
-10. Cria a Git credential e o Databricks Repo a partir do GitHub
-11. Cria o workflow com File Arrival Trigger
+10. Implanta os notebooks locais em `/Workspace/Shared/marathon-case/notebooks`
+11. Valida individualmente os notebooks implantados
+12. Cria o workflow com File Arrival Trigger
 
-#### Atenção ao vinculo do GitHub
-
-O setup tenta criar o Databricks Repo automaticamente. Se isso falhar, você verá uma mensagem. Nesse caso:
-
-1. No Databricks, vá em **Workspace > Repos**
-2. Clique em **Add Repo**
-3. Cole a URL: `https://github.com/brunomrusso/marathon-case-data-master`
-4. Vincule sua conta do GitHub
-5. Aguarde o repo sincronizar (os notebooks devem aparecer)
-6. Cole o caminho do repo no terminal quando o setup pedir
+O deploy usa a Workspace API com sobrescrita idempotente. O GitHub permanece como controle de versão, mas não é uma dependência do setup nem da execução do workflow. Para uma migração temporária, `DATABRICKS_REPO_PATH` ainda é aceito internamente como caminho legado se `DATABRICKS_WORKSPACE_ROOT` não estiver definido.
 
 Se falhar em qualquer passo, basta corrigir o problema e rodar novamente:
 
@@ -349,8 +327,8 @@ marathon-case-data-master/
 - **Setup unificado:** novo `scripts/setup_all.py` executa todo o provisionamento e configuracao em um unico comando, com persistencia de estado para retomada.
 - **Infraestrutura como Terraform:** pasta `infrastructure/terraform/` cria Azure resources e Databricks workspace de forma automatizada.
 - **Configuracao do Unity Catalog via script:** `scripts/setup_unity_catalog.py` cria/escolhe metastore, atribui o workspace e cria storage credential, external location e catalog.
-- **Acoes manuais minimas:** geração do Databricks PAT e vinculo do Databricks Repo (com fallback manual documentado).
-- **Arquivo `.env`:** centraliza configuracoes de ambiente (Databricks token, GitHub token, email de alerta, repo path).
+- **Acoes manuais minimas:** somente geração do Databricks PAT; os notebooks são implantados diretamente pela Workspace API.
+- **Arquivo `.env`:** centraliza configurações de ambiente (Databricks token, email de alerta e caminho opcional no workspace), sem credenciais GitHub.
 - **Versao Python do enable_file_events:** nao depende mais exclusivamente do PowerShell.
 - **Bicep mantido como alternativa:** arquivos `infrastructure/main.bicep` e `resources.bicep` continuam disponiveis, mas nao automatizam o metastore.
 

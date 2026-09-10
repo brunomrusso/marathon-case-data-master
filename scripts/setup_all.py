@@ -13,12 +13,14 @@ Fluxo:
 8. Salva secrets no Databricks
 9. Habilita file events
 10. Sobe CSVs
-11. Cria workflow
+11. Implanta notebooks no workspace
+12. Cria workflow
 
 Progresso salvo em .setup_state.json (nao versionado).
 """
 
 import argparse
+import base64
 import json
 import os
 import shutil
@@ -53,6 +55,7 @@ STEPS = [
     "databricks_secrets",
     "enable_file_events",
     "upload_raw_data",
+    "deploy_notebooks",
     "create_workflow",
 ]
 
@@ -153,7 +156,7 @@ def ensure_dotenv():
             ENV_FILE.write_text(ENV_EXAMPLE.read_text(), encoding="utf-8")
         else:
             ENV_FILE.write_text("", encoding="utf-8")
-        print_info("Edite o arquivo .env se quiser customizar ALERT_EMAIL ou DATABRICKS_REPO_PATH.")
+        print_info("Edite o arquivo .env se quiser customizar ALERT_EMAIL ou DATABRICKS_WORKSPACE_ROOT.")
     load_dotenv(ENV_FILE)
 
 
@@ -638,150 +641,84 @@ def _test_jobs_token(host, token):
     return resp.status_code in (200, 400)  # 400 = bad request mas token valido; 403 = invalido
 
 
-def _repo_notebook_exists(host, token, notebook_path):
-    """Verifica se um notebook existe no workspace (Workspace API v2)."""
+def _workspace_object_exists(host, token, object_path):
+    """Verifica se um objeto existe no workspace (Workspace API v2)."""
     resp = requests.get(
         f"{host}/api/2.0/workspace/get-status",
         headers={"Authorization": f"Bearer {token}"},
-        params={"path": notebook_path},
+        params={"path": object_path},
         timeout=30,
     )
     return resp.status_code == 200
 
 
-def _get_databricks_user(host, token):
-    resp = requests.get(
-        f"{host}/api/2.0/preview/scim/v2/Me",
-        headers={"Authorization": f"Bearer {token}"},
-        timeout=30,
-    )
-    if resp.status_code == 200:
-        return resp.json().get("userName", "")
-    # Fallback para /api/2.0/current-user se SCIM nao estiver ativado
-    resp = requests.get(
-        f"{host}/api/2.0/current-user",
-        headers={"Authorization": f"Bearer {token}"},
-        timeout=30,
-    )
-    if resp.status_code == 200:
-        data = resp.json()
-        return data.get("userName") or data.get("user_name", "")
-    return ""
+def step_deploy_notebooks(state):
+    print_step(STEPS.index("deploy_notebooks") + 1, "Implantando notebooks no Databricks Workspace")
 
+    host = f"https://{state['outputs']['databricks_workspace_url']}"
+    token = os.environ.get("DATABRICKS_TOKEN")
+    if not token or not _test_jobs_token(host, token):
+        raise RuntimeError("DATABRICKS_TOKEN invalido ou sem acesso ao workspace.")
 
-def _ensure_databricks_repo(host, token, state):
-    """Cria Git credential e Databricks Repo automaticamente se nao existir."""
-    repo_path = os.environ.get("DATABRICKS_REPO_PATH")
-    if repo_path:
-        print_ok(f"Usando DATABRICKS_REPO_PATH do .env: {repo_path}")
-        return repo_path
+    api_root = (os.environ.get("DATABRICKS_WORKSPACE_ROOT") or "/Shared/marathon-case").strip().rstrip("/")
+    if api_root.startswith("/Workspace"):
+        api_root = api_root.removeprefix("/Workspace")
+    if not api_root.startswith("/"):
+        api_root = f"/{api_root}"
+    notebooks_root = f"{api_root}/notebooks"
+    headers = {"Authorization": f"Bearer {token}"}
 
-    github_token = os.environ.get("GITHUB_TOKEN")
-    github_username = os.environ.get("GITHUB_USERNAME")
-    if not github_token or not github_username:
-        print_info("")
-        print_info("=" * 60)
-        print_info("ACAO MANUAL NECESSARIA: configurar Databricks Repo")
-        print_info("=" * 60)
-        print_info("O setup pode criar o Databricks Repo automaticamente")
-        print_info("usando um GitHub Personal Access Token.")
-        print_info("")
-        print_info("Passos:")
-        print_info("  1. Va em https://github.com/settings/tokens")
-        print_info("  2. Gere um token com scope 'repo'")
-        print_info("  3. Cole o token abaixo")
-        print_info("  4. Informe seu usuario do GitHub")
-        print_info("=" * 60)
-
-        github_token = prompt("Cole o GitHub Personal Access Token")
-        github_username = prompt("Informe seu usuario do GitHub")
-        os.environ["GITHUB_TOKEN"] = github_token
-        os.environ["GITHUB_USERNAME"] = github_username
-        update_env_file(["GITHUB_TOKEN", "GITHUB_USERNAME"])
-
-    repo_url = "https://github.com/brunomrusso/marathon-case-data-master"
-    print_info("Criando Git credential no Databricks...")
     resp = requests.post(
-        f"{host}/api/2.0/git-credentials",
-        headers={"Authorization": f"Bearer {token}"},
-        json={
-            "personal_access_token": github_token,
-            "git_username": github_username,
-            "git_provider": "gitHub",
-        },
+        f"{host}/api/2.0/workspace/mkdirs",
+        headers=headers,
+        json={"path": notebooks_root},
         timeout=30,
     )
-    if resp.status_code == 200:
-        print_ok("Git credential criada")
-    elif "already" in resp.text.lower() or resp.status_code == 409:
-        print_ok("Git credential ja existia")
-    else:
-        raise RuntimeError(f"Falha ao criar Git credential: {resp.status_code} - {resp.text}")
+    resp.raise_for_status()
 
-    print_info("Descobrindo usuario do Databricks...")
-    databricks_user = _get_databricks_user(host, token)
-    if not databricks_user:
-        databricks_user = github_username
-    print_ok(f"Usuario Databricks: {databricks_user}")
+    notebook_files = sorted((PROJECT_ROOT / "notebooks").glob("*.py"))
+    required = {
+        "00_bronze_orchestrator.py",
+        "01_bronze_ingestion.py",
+        "02_silver_etl.py",
+        "03_gold_aggregations.py",
+        "04_weather_enrichment.py",
+    }
+    missing = sorted(required - {path.name for path in notebook_files})
+    if missing:
+        raise RuntimeError(f"Notebooks obrigatorios ausentes: {', '.join(missing)}")
 
-    print_info("Criando Databricks Repo...")
-    repo_path = f"/Repos/{databricks_user}/marathon-case-data-master"
-    resp = requests.post(
-        f"{host}/api/2.0/repos",
-        headers={"Authorization": f"Bearer {token}"},
-        json={
-            "url": repo_url,
-            "provider": "gitHub",
-            "path": repo_path,
-        },
-        timeout=30,
-    )
-    if resp.status_code == 200:
-        data = resp.json()
-        repo_path = data.get("path", repo_path)
-        print_ok(f"Repo criado: {repo_path}")
-    elif resp.status_code == 409:
-        # Ja existe: lista para achar o path
-        resp = requests.get(
-            f"{host}/api/2.0/repos",
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=30,
+    for notebook_file in notebook_files:
+        destination = f"{notebooks_root}/{notebook_file.stem}"
+        content = base64.b64encode(notebook_file.read_bytes()).decode("ascii")
+        resp = requests.post(
+            f"{host}/api/2.0/workspace/import",
+            headers=headers,
+            json={
+                "path": destination,
+                "format": "SOURCE",
+                "language": "PYTHON",
+                "content": content,
+                "overwrite": True,
+            },
+            timeout=60,
         )
-        repos = resp.json() if resp.status_code == 200 else {}
-        for r in repos.get("repos", []):
-            if r.get("url") == repo_url:
-                repo_path = r.get("path", repo_path)
-                break
-        print_ok(f"Repo ja existia: {repo_path}")
-    else:
-        print_warn(f"Falha ao criar Repo via API: {resp.status_code} - {resp.text}")
-        print_info("")
-        print_info("=" * 60)
-        print_info("ACAO MANUAL NECESSARIA: vincular o repositorio do GitHub")
-        print_info("=" * 60)
-        print_info("Passos:")
-        print_info(f"  1. No Databricks, va em Workspace > Repos")
-        print_info(f"  2. Clique em 'Add Repo'")
-        print_info(f"  3. Cole a URL: {repo_url}")
-        print_info(f"  4. Vincule sua conta do GitHub")
-        print_info(f"  5. Aguarde a sincronizacao (os notebooks devem aparecer)")
-        print_info(f"  6. Cole o caminho do repo abaixo")
-        print_info("=" * 60)
-        try:
-            webbrowser.open(f"{host}/browse/folders/0")
-        except Exception:
-            pass
-        repo_path = prompt("Cole o caminho do Databricks Repo")
+        resp.raise_for_status()
+        if not _workspace_object_exists(host, token, destination):
+            raise RuntimeError(f"Notebook nao encontrado apos upload: {destination}")
+        print_ok(f"Notebook implantado: {destination}")
 
-    # Verifica se o path termina com /Workspace no workflow
-    workflow_path = f"/Workspace{repo_path}"
-    if not _repo_notebook_exists(host, token, f"{workflow_path}/notebooks/00_bronze_orchestrator"):
-        print_warn("Notebooks nao encontrados no repo. Verifique se a sincronizacao com o GitHub foi concluida.")
-        print_info("Caminho do repo usado no workflow:", workflow_path)
-
-    os.environ["DATABRICKS_REPO_PATH"] = workflow_path
-    update_env_file(["DATABRICKS_REPO_PATH"])
-    return workflow_path
+    workflow_root = f"/Workspace{api_root}"
+    previous_root = state["outputs"].get("databricks_workspace_root")
+    os.environ["DATABRICKS_WORKSPACE_ROOT"] = workflow_root
+    update_env_file(["DATABRICKS_WORKSPACE_ROOT"])
+    state["outputs"]["databricks_workspace_root"] = workflow_root
+    if previous_root != workflow_root and "create_workflow" in state["completed"]:
+        state["completed"].remove("create_workflow")
+        print_info("Workflow existente sera recriado para usar os notebooks implantados.")
+    save_state(state)
+    print_ok(f"Codigo implantado em: {workflow_root}")
+    mark_completed(state, "deploy_notebooks")
 
 
 def step_create_workflow(state):
@@ -803,14 +740,14 @@ def step_create_workflow(state):
         update_env_file(["DATABRICKS_TOKEN"])
         print_ok("Novo PAT salvo")
 
-    repo_path = _ensure_databricks_repo(host, token, state)
-    if not repo_path:
-        print_warn("DATABRICKS_REPO_PATH nao definido no .env")
-        print_info("O workflow precisa apontar para notebooks em um Databricks Repo.")
-        print_info("Exemplo: /Workspace/Repos/seu.usuario@email.com/marathon-case-data-master")
-        repo_path = prompt("Cole o caminho do Databricks Repo", required=True)
-        os.environ["DATABRICKS_REPO_PATH"] = repo_path
-        update_env_file(["DATABRICKS_REPO_PATH"])
+    workspace_root = os.environ.get("DATABRICKS_WORKSPACE_ROOT") or state["outputs"].get("databricks_workspace_root")
+    if not workspace_root:
+        workspace_root = os.environ.get("DATABRICKS_REPO_PATH")
+        if workspace_root:
+            print_warn("Usando DATABRICKS_REPO_PATH legado. Prefira DATABRICKS_WORKSPACE_ROOT.")
+    if not workspace_root:
+        raise RuntimeError("Caminho dos notebooks nao definido. Execute primeiro o passo deploy_notebooks.")
+    os.environ["DATABRICKS_WORKSPACE_ROOT"] = workspace_root
 
     script = PROJECT_ROOT / "scripts" / "create_databricks_workflow.py"
     if not script.exists():

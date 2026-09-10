@@ -14,13 +14,17 @@ def get_env_or_raise(name):
 
 def main():
     parser = argparse.ArgumentParser(description="Create Databricks Workflow")
-    parser.add_argument("--repo-path", help="Workspace path to repo (e.g. /Workspace/Repos/user/marathon-case-data-master)")
+    parser.add_argument("--workspace-root", help="Workspace path containing the deployed project files")
+    parser.add_argument("--repo-path", help="Legacy alias for --workspace-root")
     parser.add_argument("--cluster-id", help="Existing cluster ID (optional)")
     args = parser.parse_args()
 
     host = get_env_or_raise("DATABRICKS_HOST").rstrip("/")
     token = get_env_or_raise("DATABRICKS_TOKEN")
-    repo_path = args.repo_path or get_env_or_raise("DATABRICKS_REPO_PATH")
+    workspace_root = args.workspace_root or args.repo_path or os.environ.get("DATABRICKS_WORKSPACE_ROOT") or os.environ.get("DATABRICKS_REPO_PATH")
+    if not workspace_root:
+        raise ValueError("Defina DATABRICKS_WORKSPACE_ROOT")
+    workspace_root = workspace_root.rstrip("/")
     cluster_id = args.cluster_id or os.environ.get("DATABRICKS_EXISTING_CLUSTER_ID")
 
     config_path = Path(__file__).parent.parent / "config" / "config.yaml"
@@ -34,25 +38,25 @@ def main():
     tasks = [
         {
             "task_key": "bronze_orchestrator",
-            "notebook_task": {"notebook_path": f"{repo_path}/notebooks/00_bronze_orchestrator"},
+            "notebook_task": {"notebook_path": f"{workspace_root}/notebooks/00_bronze_orchestrator"},
             "description": "Ingest all raw CSVs into Bronze",
         },
         {
             "task_key": "silver_etl",
             "depends_on": [{"task_key": "bronze_orchestrator"}],
-            "notebook_task": {"notebook_path": f"{repo_path}/notebooks/02_silver_etl"},
+            "notebook_task": {"notebook_path": f"{workspace_root}/notebooks/02_silver_etl"},
             "description": "Run Silver ETL",
         },
         {
             "task_key": "weather_enrichment",
             "depends_on": [{"task_key": "silver_etl"}],
-            "notebook_task": {"notebook_path": f"{repo_path}/notebooks/04_weather_enrichment"},
+            "notebook_task": {"notebook_path": f"{workspace_root}/notebooks/04_weather_enrichment"},
             "description": "Enrich Silver with weather data",
         },
         {
             "task_key": "gold_aggregations",
             "depends_on": [{"task_key": "weather_enrichment"}],
-            "notebook_task": {"notebook_path": f"{repo_path}/notebooks/03_gold_aggregations"},
+            "notebook_task": {"notebook_path": f"{workspace_root}/notebooks/03_gold_aggregations"},
             "description": "Generate Gold tables",
         },
     ]
