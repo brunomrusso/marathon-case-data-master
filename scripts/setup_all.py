@@ -349,13 +349,10 @@ def configure_databricks_token(host, validator):
             print_ok("Autenticacao Databricks via Microsoft Entra ID")
             return token
 
-    print_warn("A identidade Microsoft Entra ID nao teve acesso ao Databricks.")
-    token = prompt("Cole um Databricks PAT temporario para fallback", secret=True)
-    if not validator(host, token):
-        raise RuntimeError("Token sem acesso ao Databricks.")
-    os.environ["DATABRICKS_TOKEN"] = token
-    print_warn("Usando PAT somente nesta execucao; o token nao sera persistido.")
-    return token
+    raise RuntimeError(
+        "A identidade Microsoft Entra ID nao teve acesso ao Databricks. "
+        "Verifique o az login e os papeis RBAC do executor."
+    )
 
 
 def step_account_id(state):

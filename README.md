@@ -118,7 +118,7 @@ ALERT_EMAIL=seu-email@exemplo.com                        # opcional
 DATABRICKS_WORKSPACE_ROOT=                               # opcional; padrao: /Workspace/Shared/marathon-case
 ```
 
-> Nenhum token GitHub ou Databricks precisa ser criado. O setup usa a identidade Microsoft Entra ID da sessão `az login` e obtém tokens temporários por `DefaultAzureCredential`. Um PAT pode ser informado apenas como fallback não persistido se a identidade atual não tiver acesso ao workspace.
+> Nenhum token GitHub ou Databricks precisa ser criado. O setup usa a identidade Microsoft Entra ID da sessão `az login` e obtém tokens temporários por `DefaultAzureCredential`.
 
 Execute o setup unico:
 
@@ -146,7 +146,7 @@ Fluxo do script:
 
 O deploy usa a Workspace API com sobrescrita idempotente. O GitHub permanece como controle de versão, mas não é uma dependência do setup nem da execução do workflow. Para uma migração temporária, `DATABRICKS_REPO_PATH` ainda é aceito internamente como caminho legado se `DATABRICKS_WORKSPACE_ROOT` não estiver definido.
 
-O upload para o ADLS usa `DefaultAzureCredential` e o RBAC `Storage Blob Data Contributor` atribuído pelo Terraform à identidade que executa o setup. Nenhuma Storage Account Key é consultada ou persistida. O uploader aguarda automaticamente a propagação do RBAC em respostas temporárias `401/403`.
+O upload para o ADLS usa `DefaultAzureCredential` e o RBAC `Storage Blob Data Contributor` atribuído pelo Terraform à identidade que executa o setup. Para registrar a storage credential no Unity Catalog, a mesma identidade recebe `Contributor` somente sobre o Access Connector. Nenhuma Storage Account Key ou PAT é consultada ou persistida. O uploader aguarda automaticamente a propagação do RBAC em respostas temporárias `401/403`.
 
 Se falhar em qualquer passo, basta corrigir o problema e rodar novamente:
 
@@ -325,7 +325,7 @@ marathon-case-data-master/
 - **Setup unificado:** novo `scripts/setup_all.py` executa todo o provisionamento e configuracao em um unico comando, com persistencia de estado para retomada.
 - **Infraestrutura como Terraform:** pasta `infrastructure/terraform/` cria Azure resources e Databricks workspace de forma automatizada.
 - **Configuracao do Unity Catalog via script:** `scripts/setup_unity_catalog.py` cria/escolhe metastore, atribui o workspace e cria storage credential, external location e catalog.
-- **Autenticação sem PAT:** APIs e SQL Connector usam tokens temporários Microsoft Entra ID obtidos por `DefaultAzureCredential`; PAT existe apenas como fallback não persistido.
+- **Autenticação sem PAT:** APIs e SQL Connector usam tokens temporários Microsoft Entra ID obtidos por `DefaultAzureCredential`; nenhum PAT é solicitado ou persistido.
 - **Arquivo `.env`:** centraliza somente configurações não secretas, como host, email de alerta, HTTP Path e caminho opcional no workspace.
 - **Versao Python do enable_file_events:** nao depende mais exclusivamente do PowerShell.
 - **Bicep mantido como alternativa:** arquivos `infrastructure/main.bicep` e `resources.bicep` continuam disponiveis, mas nao automatizam o metastore.
