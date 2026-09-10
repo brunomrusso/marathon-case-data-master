@@ -159,6 +159,8 @@ Fluxo do script:
 
 O deploy usa a Workspace API com sobrescrita idempotente. O GitHub permanece como controle de versão, mas não é uma dependência do setup nem da execução do workflow. Para uma migração temporária, `DATABRICKS_REPO_PATH` ainda é aceito internamente como caminho legado se `DATABRICKS_WORKSPACE_ROOT` não estiver definido.
 
+O upload para o ADLS usa `DefaultAzureCredential` e o RBAC `Storage Blob Data Contributor` atribuído pelo Terraform à identidade que executa o setup. Nenhuma Storage Account Key é consultada ou persistida. O uploader aguarda automaticamente a propagação do RBAC em respostas temporárias `401/403`.
+
 Se falhar em qualquer passo, basta corrigir o problema e rodar novamente:
 
 ```powershell
@@ -346,4 +348,4 @@ marathon-case-data-master/
 - **Observabilidade append-only:** tabela `monitoring.data_quality_log` migrada de `overwrite` para `append` com `mergeSchema=true`, eliminando conflito de schema entre notebooks executados na mesma run.
 - **Ignorar arquivos não-fonte no orquestrador:** `00_bronze_orchestrator.py` agora ignora arquivos como `marathon_metadata.csv` que não são fontes de resultados de maratona, em vez de abortar com `ValueError`.
 - **Correção de conflito de nomes PySpark/Python no Gold:** no `03_gold_aggregations.py`, as funções `round`, `sum`, `min` e `max` importadas do PySpark foram renomeadas para `spark_round`, `spark_sum`, `spark_min` e `spark_max`, preservando os built-ins do Python para uso em listas e arredondamento escalares.
-- **Upload automático de container:** o script `upload_raw_data.py` agora cria o container ADLS automaticamente se ele não existir.
+- **Upload sem chaves:** o script `upload_raw_data.py` usa Microsoft Entra ID, `DefaultAzureCredential` e RBAC com retry de propagação; nenhuma Storage Account Key é consultada ou persistida.

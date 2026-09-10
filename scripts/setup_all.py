@@ -6,7 +6,7 @@ Fluxo:
 1. Checa prerequisitos (Python, Azure CLI, Terraform)
 2. Login no Azure
 3. Cria infraestrutura Azure via Terraform (resource group, storage, workspace, access connector, key vault)
-4. Atualiza config.yaml e obtem storage key
+4. Atualiza config.yaml e configura upload com Microsoft Entra ID
 5. Gera Azure AD token para a API do Databricks
 6. Pede o Databricks Account ID (instrucoes na tela)
 7. Cria/escolhe metastore e atribui ao workspace (scripts/setup_unity_catalog.py)
@@ -198,6 +198,15 @@ def update_env_file(vars_to_update):
     ENV_FILE.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def remove_env_vars(vars_to_remove):
+    if ENV_FILE.exists():
+        lines = ENV_FILE.read_text(encoding="utf-8").splitlines()
+        lines = [line for line in lines if not any(line.startswith(f"{var}=") for var in vars_to_remove)]
+        ENV_FILE.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    for var in vars_to_remove:
+        os.environ.pop(var, None)
+
+
 def step_prerequisites(state):
     print_step(STEPS.index("prerequisites") + 1, "Checando prerequisitos")
 
@@ -310,21 +319,8 @@ def step_update_config(state):
     CONFIG_FILE.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
     print_ok(f"config.yaml atualizado com storage_account={storage}")
 
-    print_info("Obtendo storage access key...")
-    storage_key = run_command(
-        [
-            "az", "storage", "account", "keys", "list",
-            "--account-name", storage,
-            "--resource-group", rg,
-            "--query", "[0].value",
-            "-o", "tsv",
-        ],
-        capture=True,
-        check=True,
-    )
-    os.environ["STORAGE_ACCESS_KEY"] = storage_key
-    update_env_file(["STORAGE_ACCESS_KEY"])
-    print_ok("Storage access key salva no .env")
+    remove_env_vars(["STORAGE_ACCESS_KEY"])
+    print_ok("Upload configurado para autenticacao Microsoft Entra ID")
 
     host = f"https://{outputs.get('databricks_workspace_url')}"
     os.environ["DATABRICKS_HOST"] = host
@@ -629,25 +625,7 @@ def step_enable_file_events(state):
 def step_upload_raw_data(state):
     print_step(STEPS.index("upload_raw_data") + 1, "Subindo CSVs para a camada raw")
 
-    outputs = state["outputs"]
-    storage = outputs.get("storage_account_name")
-    rg = outputs.get("resource_group_name")
-
-    print_info("Obtendo storage access key atualizada...")
-    storage_key = run_command(
-        [
-            "az", "storage", "account", "keys", "list",
-            "--account-name", storage,
-            "--resource-group", rg,
-            "--query", "[0].value",
-            "-o", "tsv",
-        ],
-        capture=True,
-        check=True,
-    )
-    os.environ["STORAGE_ACCESS_KEY"] = storage_key
-    update_env_file(["STORAGE_ACCESS_KEY"])
-    print_ok("Storage access key atualizada no .env")
+    remove_env_vars(["STORAGE_ACCESS_KEY"])
 
     script = PROJECT_ROOT / "scripts" / "upload_raw_data.py"
     if not script.exists():
@@ -841,6 +819,7 @@ def main():
 
     if ENV_FILE.exists():
         load_dotenv(ENV_FILE, override=True)
+        remove_env_vars(["STORAGE_ACCESS_KEY"])
     state = load_state()
     if args.reset:
         print_warn("Resetando estado do setup")

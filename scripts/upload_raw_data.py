@@ -1,20 +1,24 @@
 import argparse
-import getpass
-import os
+import time
 from pathlib import Path
-from azure.storage.blob import BlobServiceClient
+
 import yaml
+from azure.core.exceptions import HttpResponseError
+from azure.identity import DefaultAzureCredential
+from azure.storage.blob import BlobServiceClient
 
 
-def get_env_or_prompt(name, secret=False):
-    value = os.environ.get(name)
-    if not value:
-        prompt = f"{name}: "
-        if secret:
-            value = getpass.getpass(prompt)
-        else:
-            value = input(prompt)
-    return value
+def wait_for_storage_access(container_client, attempts=6):
+    for attempt in range(1, attempts + 1):
+        try:
+            container_client.get_container_properties()
+            return
+        except HttpResponseError as exc:
+            if exc.status_code not in (401, 403) or attempt == attempts:
+                raise
+            delay = min(5 * 2 ** (attempt - 1), 60)
+            print(f"RBAC ainda nao propagado (tentativa {attempt}/{attempts}). Nova tentativa em {delay}s...")
+            time.sleep(delay)
 
 
 def main():
@@ -35,17 +39,13 @@ def main():
 
     storage = config["azure"]["storage_account"]
     container = config["azure"]["container"]
-    storage_key = get_env_or_prompt("STORAGE_ACCESS_KEY", secret=True)
-
-    account_url = f"https://{storage}.blob.core.windows.net"
-    blob_service_client = BlobServiceClient(account_url=account_url, credential=storage_key)
-
-    try:
-        blob_service_client.create_container(container)
-        print(f"Container '{container}' criado.")
-    except Exception as e:
-        if "ContainerAlreadyExists" not in str(e):
-            raise
+    credential = DefaultAzureCredential()
+    blob_service_client = BlobServiceClient(
+        account_url=f"https://{storage}.blob.core.windows.net",
+        credential=credential,
+    )
+    container_client = blob_service_client.get_container_client(container)
+    wait_for_storage_access(container_client)
 
     csv_files = sorted(f for f in local_dir.iterdir() if f.is_file() and f.suffix.lower() == ".csv")
     if not csv_files:
@@ -54,12 +54,12 @@ def main():
 
     for f in csv_files:
         blob_name = f"raw/{f.name}"
-        blob_client = blob_service_client.get_blob_client(container=container, blob=blob_name)
+        blob_client = container_client.get_blob_client(blob_name)
         with open(f, "rb") as data:
             blob_client.upload_blob(data, overwrite=True)
         print(f"Upload: {f} -> abfss://{container}@{storage}.dfs.core.windows.net/{blob_name}")
 
-    print("Upload concluido.")
+    print("Upload concluido com identidade Microsoft Entra ID.")
 
 
 if __name__ == "__main__":

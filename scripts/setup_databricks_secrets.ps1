@@ -1,11 +1,8 @@
-# Helper para criar o secret scope e salvar a chave do ADLS no Databricks
-# Substitua o valor abaixo pela Storage Access Key exibida pelo setup.ps1
+# Helper legado para criar o secret scope usado pelos notebooks
+# O acesso ao ADLS usa Access Connector e Managed Identity, sem chaves de storage.
 
 $ErrorActionPreference = "Stop"
 
-$storageKey = Read-Host "Cole a Storage Access Key"
-
 databricks secrets create-scope --scope marathon-scope --initial-manage-principal users
-databricks secrets put --scope marathon-scope --key adls-access-key --string-value $storageKey
 
-Write-Host "Segredo 'adls-access-key' salvo no scope 'marathon-scope'."
+Write-Host "Secret scope 'marathon-scope' criado. Nenhuma chave do ADLS e necessaria."

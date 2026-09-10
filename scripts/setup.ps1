@@ -67,13 +67,17 @@ $wsUrl = $deployment.properties.outputs.databricksWorkspaceUrl.value
 $kv = $deployment.properties.outputs.keyVaultName.value
 $accessConnectorId = $deployment.properties.outputs.accessConnectorId.value
 
-# Obter storage key
-$storageKey = (az storage account keys list `
-  --account-name $storage `
-  --resource-group $rg `
-  --query '[0].value' `
-  -o tsv)
-Assert-Command "az storage account keys list"
+# Conceder acesso ao executor atual sem usar storage key
+$subscriptionId = (az account show --query id -o tsv)
+$principalId = (az ad signed-in-user show --query id -o tsv)
+$storageScope = "/subscriptions/$subscriptionId/resourceGroups/$rg/providers/Microsoft.Storage/storageAccounts/$storage"
+az role assignment create `
+  --assignee-object-id $principalId `
+  --assignee-principal-type User `
+  --role "Storage Blob Data Contributor" `
+  --scope $storageScope `
+  --output none
+Assert-Command "az role assignment create"
 
 Write-Host ""
 Write-Host "==== Recursos criados ===="
@@ -84,8 +88,7 @@ Write-Host "Databricks Workspace URL: $wsUrl"
 Write-Host "Key Vault: $kv"
 Write-Host "Access Connector ID: $accessConnectorId"
 Write-Host ""
-Write-Host "Storage Access Key (guarde em local seguro):"
-Write-Host $storageKey
+Write-Host "Upload no ADLS autorizado via Microsoft Entra ID e RBAC."
 Write-Host ""
 Write-Host "Proximos passos:"
 Write-Host "1. Acesse o Databricks Workspace: $wsUrl"
@@ -93,7 +96,6 @@ Write-Host "2. Gere um Personal Access Token em User Settings > Access tokens"
 Write-Host "3. Defina as variaveis de ambiente:"
 Write-Host "   `$env:DATABRICKS_HOST = `"$wsUrl`""
 Write-Host "   `$env:DATABRICKS_TOKEN = `"seu-token`""
-Write-Host "   `$env:STORAGE_ACCESS_KEY = `"$storageKey`""
 Write-Host "   `$env:ACCESS_CONNECTOR_ID = `"$accessConnectorId`""
 Write-Host "4. Salve os segredos: python scripts/setup_databricks_secrets.py"
 Write-Host "5. Configure o Unity Catalog: python scripts/setup_unity_catalog.py"
