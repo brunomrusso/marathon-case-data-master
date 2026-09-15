@@ -31,7 +31,7 @@ def main():
     terraform = find_databricks_terraform()
     run([terraform, "init", "-input=false"])
     group_exists = subprocess.run(
-        [az, "group", "exists", "--name", "rg-marathon-case"],
+        [az, "group", "exists", "--name", "rg-marathon-prod"],
         check=True,
         capture_output=True,
         text=True,
@@ -43,7 +43,7 @@ def main():
         text=True,
     ).stdout
     if group_exists and "azurerm_resource_group.target" not in state:
-        raise RuntimeError("Remova o ambiente descartavel rg-marathon-case antes de executar o bootstrap.")
+        raise RuntimeError("Remova o ambiente descartavel rg-marathon-prod antes de executar o bootstrap.")
     run([terraform, "apply", "-auto-approve", "-input=false"])
     result = subprocess.run(
         [terraform, "output", "-json"],

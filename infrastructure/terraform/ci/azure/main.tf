@@ -18,6 +18,7 @@ provider "azurerm" {
 module "platform" {
   source                        = "../.."
   create_resource_group         = false
+  environment                   = "prod"
   storage_account_name_override = "stmarathonprod"
 }
 

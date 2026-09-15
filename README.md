@@ -268,7 +268,7 @@ O bootstrap cria recursos persistentes que não fazem parte do ambiente descart�
 - identidade `id-marathon-github` e credencial federada para o environment `production`, vinculada aos IDs imutáveis do proprietário e do repositório;
 - backend privado para os states Terraform;
 - Storage Seed privado para os CSVs brutos;
-- Resource Group vazio `rg-marathon-case`, onde a identidade recebe `Contributor` e `User Access Administrator`.
+- Resource Group vazio `rg-marathon-prod`, onde a identidade recebe `Contributor` e `User Access Administrator`; `rg-marathon-case` permanece exclusivo do setup local.
 
 Execute o bootstrap apenas com o ambiente descartável removido, pois ele passa a ser o proprietário do Resource Group alvo:
 

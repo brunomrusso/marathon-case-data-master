@@ -32,7 +32,7 @@ resource "azurerm_resource_group" "bootstrap" {
 }
 
 resource "azurerm_resource_group" "target" {
-  name     = "rg-marathon-case"
+  name     = "rg-marathon-prod"
   location = var.location
   tags     = var.tags
 }
