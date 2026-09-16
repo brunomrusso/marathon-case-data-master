@@ -129,14 +129,34 @@ def assign_workspace_to_metastore(account_id, token, workspace_id, metastore_id)
     raise RuntimeError(f"Erro ao atribuir metastore: {resp.status_code} - {resp.text} | {resp2.status_code} - {resp2.text}")
 
 
+def _try_recover_orphan(host, token, resource_type, resource_path, name):
+    """Try to delete or transfer ownership of an orphaned UC resource (403)."""
+    del_resp = workspace_api("DELETE", host, token, f"/api/2.1/unity-catalog/{resource_path}/{name}", params={"force": "true"})
+    if del_resp.status_code in (200, 204):
+        print(f"  Credential/location orfã '{name}' deletada com sucesso")
+        return True
+    # Try ownership transfer
+    whoami = workspace_api("GET", host, token, "/api/2.0/preview/scim/v2/Me")
+    if whoami.status_code == 200:
+        my_username = whoami.json().get("userName", "")
+        patch_resp = workspace_api("PATCH", host, token, f"/api/2.1/unity-catalog/{resource_path}/{name}", {"owner": my_username})
+        if patch_resp.status_code == 200:
+            print(f"  Owner de '{name}' transferido para {my_username}")
+            del2 = workspace_api("DELETE", host, token, f"/api/2.1/unity-catalog/{resource_path}/{name}", params={"force": "true"})
+            if del2.status_code in (200, 204):
+                return True
+    return False
+
+
 def create_storage_credential(host, token, name, external_location_name, access_connector_id):
+    """Create or recover storage credential. Returns (recreated: bool, actual_name: str)."""
     print(f"Garantindo que a storage credential '{name}' esteja correta...")
     current = workspace_api("GET", host, token, f"/api/2.1/unity-catalog/storage-credentials/{name}")
     if current.status_code == 200:
         current_connector = current.json().get("azure_managed_identity", {}).get("access_connector_id", "")
         if current_connector.lower() == access_connector_id.lower():
             print(f"Storage credential '{name}' ja aponta para o Access Connector atual")
-            return False
+            return False, name
         del_ext = workspace_api("DELETE", host, token, f"/api/2.1/unity-catalog/external-locations/{external_location_name}", params={"force": "true"})
         if del_ext.status_code not in (200, 204, 404):
             raise RuntimeError(f"Erro ao remover external location antiga: {del_ext.status_code} - {del_ext.text}")
@@ -144,6 +164,28 @@ def create_storage_credential(host, token, name, external_location_name, access_
         if del_resp.status_code not in (200, 204):
             raise RuntimeError(f"Erro ao remover storage credential antiga: {del_resp.status_code} - {del_resp.text}")
         time.sleep(5)
+    elif current.status_code == 403:
+        print(f"Storage credential '{name}' existe mas pertence a outra identidade (403). Tentando recuperar...")
+        workspace_api("DELETE", host, token, f"/api/2.1/unity-catalog/external-locations/{external_location_name}", params={"force": "true"})
+        recovered = _try_recover_orphan(host, token, "storage-credentials", "storage-credentials", name)
+        if not recovered:
+            # Use an alternative name to avoid conflict with the orphaned resource
+            alt_name = f"{name}-v2"
+            alt_ext = f"{external_location_name}-v2"
+            print(f"  Nao foi possivel recuperar '{name}'. Usando nome alternativo: '{alt_name}'")
+            # Check if the alt name already exists and is correct
+            alt_check = workspace_api("GET", host, token, f"/api/2.1/unity-catalog/storage-credentials/{alt_name}")
+            if alt_check.status_code == 200:
+                alt_connector = alt_check.json().get("azure_managed_identity", {}).get("access_connector_id", "")
+                if alt_connector.lower() == access_connector_id.lower():
+                    print(f"Storage credential '{alt_name}' ja aponta para o Access Connector atual")
+                    return False, alt_name
+                workspace_api("DELETE", host, token, f"/api/2.1/unity-catalog/external-locations/{alt_ext}", params={"force": "true"})
+                workspace_api("DELETE", host, token, f"/api/2.1/unity-catalog/storage-credentials/{alt_name}", params={"force": "true"})
+                time.sleep(3)
+            name = alt_name
+        else:
+            time.sleep(5)
     elif current.status_code != 404:
         raise RuntimeError(f"Erro ao consultar storage credential: {current.status_code} - {current.text}")
 
@@ -155,7 +197,30 @@ def create_storage_credential(host, token, name, external_location_name, access_
     if resp.status_code != 200:
         raise RuntimeError(f"Erro ao criar storage credential: {resp.status_code} - {resp.text}")
     print(f"Storage credential '{name}' criada")
-    return True
+    return True, name
+
+
+def _clear_overlapping_locations(host, token, target_url):
+    """Remove or recover any external locations that overlap with target_url."""
+    resp = workspace_api("GET", host, token, "/api/2.1/unity-catalog/external-locations")
+    if resp.status_code != 200:
+        return
+    target = target_url.rstrip("/")
+    for loc in resp.json().get("external_locations", []):
+        loc_url = loc.get("url", "").rstrip("/")
+        loc_name = loc.get("name", "")
+        # Check overlap: one is prefix of the other
+        if target.startswith(loc_url) or loc_url.startswith(target):
+            print(f"  External location conflitante encontrada: '{loc_name}' -> {loc_url}")
+            del_resp = workspace_api("DELETE", host, token, f"/api/2.1/unity-catalog/external-locations/{loc_name}", params={"force": "true"})
+            if del_resp.status_code in (200, 204):
+                print(f"  Removida: '{loc_name}'")
+            elif del_resp.status_code == 403:
+                recovered = _try_recover_orphan(host, token, "external-locations", "external-locations", loc_name)
+                if recovered:
+                    print(f"  Recuperada e removida: '{loc_name}'")
+                else:
+                    print(f"  AVISO: nao foi possivel remover location orfã '{loc_name}'")
 
 
 def create_external_location(host, token, name, url, credential_name):
@@ -168,8 +233,20 @@ def create_external_location(host, token, name, url, credential_name):
         del_resp = workspace_api("DELETE", host, token, f"/api/2.1/unity-catalog/external-locations/{name}", params={"force": "true"})
         if del_resp.status_code not in (200, 204):
             raise RuntimeError(f"Erro ao remover external location antiga: {del_resp.status_code} - {del_resp.text}")
+    elif current.status_code == 403:
+        print(f"External location '{name}' existe mas pertence a outra identidade (403). Tentando recuperar...")
+        recovered = _try_recover_orphan(host, token, "external-locations", "external-locations", name)
+        if not recovered:
+            alt_name = f"{name}-v2"
+            print(f"  Nao foi possivel recuperar '{name}'. Usando nome alternativo: '{alt_name}'")
+            name = alt_name
+        else:
+            time.sleep(3)
     elif current.status_code != 404:
         raise RuntimeError(f"Erro ao consultar external location: {current.status_code} - {current.text}")
+
+    # Clear any overlapping external locations before creating
+    _clear_overlapping_locations(host, token, url)
 
     resp = workspace_api("POST", host, token, "/api/2.1/unity-catalog/external-locations", {
         "name": name,
@@ -177,9 +254,24 @@ def create_external_location(host, token, name, url, credential_name):
         "credential_name": credential_name,
         "comment": "External location para o data lake do case marathon",
     })
-    if resp.status_code != 200:
-        raise RuntimeError(f"Erro ao criar external location: {resp.status_code} - {resp.text}")
-    print(f"External location '{name}' criada")
+    if resp.status_code == 200:
+        print(f"External location '{name}' criada")
+        return
+    # If URL overlaps with an orphaned location we cannot remove, try a narrower sub-path
+    if resp.status_code == 400 and "overlaps" in resp.text.lower():
+        narrow_url = url.rstrip("/") + "/catalogs/"
+        print(f"  URL conflita com location orfã. Tentando sub-path: {narrow_url}")
+        resp2 = workspace_api("POST", host, token, "/api/2.1/unity-catalog/external-locations", {
+            "name": name,
+            "url": narrow_url,
+            "credential_name": credential_name,
+            "comment": "External location para o data lake do case marathon (sub-path)",
+        })
+        if resp2.status_code == 200:
+            print(f"External location '{name}' criada em sub-path")
+            return
+        raise RuntimeError(f"Erro ao criar external location (sub-path): {resp2.status_code} - {resp2.text}")
+    raise RuntimeError(f"Erro ao criar external location: {resp.status_code} - {resp.text}")
 
 
 def grant_catalog_read_access(host, token, catalog_name):
@@ -190,9 +282,12 @@ def grant_catalog_read_access(host, token, catalog_name):
         f"/api/2.1/unity-catalog/permissions/catalog/{catalog_name}",
         {"changes": [{"principal": "account users", "add": ["BROWSE", "USE_CATALOG", "USE_SCHEMA", "SELECT"]}]},
     )
-    if resp.status_code != 200:
+    if resp.status_code == 200:
+        print("Acesso de leitura do catalogo concedido a account users")
+    elif resp.status_code == 403:
+        print(f"Sem permissao MANAGE no catalogo '{catalog_name}' (owner diferente). Grants existentes preservados.")
+    else:
         raise RuntimeError(f"Erro ao conceder leitura no catalogo: {resp.status_code} - {resp.text}")
-    print("Acesso de leitura do catalogo concedido a account users")
 
 
 def create_catalog(host, token, name, storage_root, force_recreate=False):
@@ -201,11 +296,33 @@ def create_catalog(host, token, name, storage_root, force_recreate=False):
         print(f"Catalog '{name}' preservado")
         return
     if resp.status_code == 200:
-        print(f"Access Connector alterado. Recriando catalog '{name}'...")
-        del_resp = workspace_api("DELETE", host, token, f"/api/2.1/unity-catalog/catalogs/{name}", params={"force": "true"})
-        if del_resp.status_code not in (200, 204):
-            raise RuntimeError(f"Falha ao remover catalog: {del_resp.status_code} - {del_resp.text}")
-        time.sleep(5)
+        if force_recreate:
+            print(f"Access Connector alterado. Recriando catalog '{name}'...")
+            del_resp = workspace_api("DELETE", host, token, f"/api/2.1/unity-catalog/catalogs/{name}", params={"force": "true"})
+            if del_resp.status_code in (200, 204):
+                time.sleep(5)
+            elif del_resp.status_code == 403:
+                # Cannot delete orphaned catalog; try to take ownership
+                recovered = _try_recover_orphan(host, token, "catalogs", "catalogs", name)
+                if recovered:
+                    time.sleep(5)
+                else:
+                    print(f"  Catalog '{name}' orfao nao pode ser removido. Reutilizando existente.")
+                    return
+            else:
+                raise RuntimeError(f"Falha ao remover catalog: {del_resp.status_code} - {del_resp.text}")
+        else:
+            print(f"Catalog '{name}' preservado")
+            return
+    elif resp.status_code == 403:
+        print(f"Catalog '{name}' existe mas pertence a outra identidade (403). Tentando recuperar...")
+        recovered = _try_recover_orphan(host, token, "catalogs", "catalogs", name)
+        if recovered:
+            time.sleep(5)
+        else:
+            # Cannot recover; the catalog exists with data, reuse it
+            print(f"  Catalog '{name}' orfao nao pode ser removido. Tentando reutilizar.")
+            return
     elif resp.status_code != 404:
         raise RuntimeError(f"Erro ao consultar catalog: {resp.status_code} - {resp.text}")
 
@@ -282,9 +399,32 @@ def main():
     resource_prefix = catalog_name.replace("_", "-")
     credential_name = f"{resource_prefix}-storage-credential"
     external_location_name = f"{resource_prefix}-external-location"
-    credential_recreated = create_storage_credential(host, token, credential_name, external_location_name, access_connector_id)
-    create_external_location(host, token, external_location_name, external_url, credential_name)
-    create_catalog(host, token, catalog_name, f"{external_url}catalogs/{catalog_name}/", force_recreate=credential_recreated)
+
+    # Check if catalog already exists with correct storage root
+    catalog_resp = workspace_api("GET", host, token, f"/api/2.1/unity-catalog/catalogs/{catalog_name}")
+    catalog_storage_root = f"{external_url}catalogs/{catalog_name}/"
+    catalog_exists_ok = (
+        catalog_resp.status_code == 200
+        and catalog_resp.json().get("storage_root", "").rstrip("/") == catalog_storage_root.rstrip("/")
+    )
+
+    credential_recreated, credential_name = create_storage_credential(host, token, credential_name, external_location_name, access_connector_id)
+    # If credential name changed due to orphan recovery, update external location name too
+    if credential_name.endswith("-v2") and not external_location_name.endswith("-v2"):
+        external_location_name = f"{external_location_name}-v2"
+
+    try:
+        create_external_location(host, token, external_location_name, external_url, credential_name)
+    except RuntimeError as e:
+        if "overlaps" in str(e).lower() and catalog_exists_ok:
+            print(f"  External location orfã bloqueia o URL mas catalog '{catalog_name}' ja existe e esta funcional. Pulando.")
+        else:
+            raise
+
+    if catalog_exists_ok and not credential_recreated:
+        print(f"Catalog '{catalog_name}' preservado (storage root correto)")
+    else:
+        create_catalog(host, token, catalog_name, catalog_storage_root, force_recreate=credential_recreated)
     grant_catalog_read_access(host, token, catalog_name)
     print(f"CATALOG_NAME={catalog_name}")
 

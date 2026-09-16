@@ -145,6 +145,20 @@ def main():
             headers=headers,
             json=job,
         )
+        # If file_arrival fails due to external location permissions, fallback to schedule
+        if resp.status_code == 403 and "external location" in resp.text.lower() and job.get("trigger", {}).get("file_arrival"):
+            print("File arrival trigger requer permissao na external location (orfã). Usando schedule trigger como fallback.")
+            del job["trigger"]
+            job["schedule"] = {
+                "quartz_cron_expression": "0 0/15 * * * ?",
+                "timezone_id": "America/Sao_Paulo",
+                "pause_status": "PAUSED",
+            }
+            resp = requests.post(
+                f"{host}/api/2.1/jobs/create",
+                headers=headers,
+                json=job,
+            )
         resp.raise_for_status()
         print(f"Workflow criado: job_id={resp.json()['job_id']}")
 
