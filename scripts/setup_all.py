@@ -289,7 +289,16 @@ def step_deploy_terraform(state):
     run_command(terraform_init_command("terraform", "platform.tfstate"), capture=False, check=True, cwd=str(TERRAFORM_DIR))
 
     print_info("terraform apply (pode levar 5-10 minutos)")
-    run_command(["terraform", "apply", "-auto-approve"], capture=False, check=True, cwd=str(TERRAFORM_DIR))
+    for attempt in range(1, 4):
+        try:
+            run_command(["terraform", "apply", "-auto-approve"], capture=False, check=True, cwd=str(TERRAFORM_DIR))
+            break
+        except RuntimeError:
+            if attempt < 3:
+                print_info(f"Terraform apply falhou (tentativa {attempt}/3). Aguardando 30s para propagacao do ARM...")
+                time.sleep(30)
+            else:
+                raise
 
     print_info("Recuperando outputs...")
     outputs_json = run_command(["terraform", "output", "-json"], capture=True, check=True, cwd=str(TERRAFORM_DIR))
