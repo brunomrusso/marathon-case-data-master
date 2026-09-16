@@ -4,7 +4,7 @@
       "name": "summary",
       "displayName": "Indicadores gerais",
       "queryLines": [
-        "SELECT SUM(total_athletes) AS total_finishers, COUNT(DISTINCT year) AS total_editions, COUNT(DISTINCT source) AS total_marathons, ROUND(AVG(avg_finish_time_sec) / 60, 1) AS avg_finish_time_min, CONCAT(LPAD(CAST(FLOOR(AVG(avg_finish_time_sec) / 3600) AS STRING), 2, '0'), ':', LPAD(CAST(FLOOR(PMOD(AVG(avg_finish_time_sec), 3600) / 60) AS STRING), 2, '0')) AS avg_finish_time_hm FROM kpi_summary"
+        "SELECT source, year, SUM(total_athletes) AS total_finishers, COUNT(DISTINCT year) AS total_editions, COUNT(DISTINCT source) AS total_marathons, ROUND(AVG(avg_finish_time_sec) / 60, 1) AS avg_finish_time_min, CONCAT(LPAD(CAST(FLOOR(AVG(avg_finish_time_sec) / 3600) AS STRING), 2, '0'), ':', LPAD(CAST(FLOOR(PMOD(AVG(avg_finish_time_sec), 3600) / 60) AS STRING), 2, '0')) AS avg_finish_time_hm FROM kpi_summary GROUP BY source, year"
       ]
     },
     {
@@ -18,14 +18,14 @@
       "name": "top_countries",
       "displayName": "Principais paises",
       "queryLines": [
-        "SELECT country, SUM(total_athletes) AS total_athletes FROM top_countries WHERE country IS NOT NULL GROUP BY country ORDER BY total_athletes DESC LIMIT 20"
+        "SELECT source, year, country, SUM(total_athletes) AS total_athletes FROM top_countries WHERE country IS NOT NULL GROUP BY source, year, country ORDER BY total_athletes DESC LIMIT 20"
       ]
     },
     {
       "name": "demographics",
       "displayName": "Perfil demografico",
       "queryLines": [
-        "SELECT age_group, gender, SUM(total_athletes) AS total_athletes, ROUND(AVG(avg_finish_time_sec) / 60, 1) AS avg_finish_time_min, CONCAT(LPAD(CAST(FLOOR(AVG(avg_finish_time_sec) / 3600) AS STRING), 2, '0'), ':', LPAD(CAST(FLOOR(PMOD(AVG(avg_finish_time_sec), 3600) / 60) AS STRING), 2, '0')) AS avg_finish_time_hm FROM age_gender_profile WHERE age_group IS NOT NULL GROUP BY age_group, gender ORDER BY CASE WHEN age_group = '0-17' THEN 0 WHEN age_group = '18-39' THEN 18 ELSE CAST(SPLIT(age_group, '-')[0] AS INT) END, gender"
+        "SELECT source, year, age_group, gender, SUM(total_athletes) AS total_athletes, ROUND(AVG(avg_finish_time_sec) / 60, 1) AS avg_finish_time_min, CONCAT(LPAD(CAST(FLOOR(AVG(avg_finish_time_sec) / 3600) AS STRING), 2, '0'), ':', LPAD(CAST(FLOOR(PMOD(AVG(avg_finish_time_sec), 3600) / 60) AS STRING), 2, '0')) AS avg_finish_time_hm FROM age_gender_profile WHERE age_group IS NOT NULL GROUP BY source, year, age_group, gender ORDER BY CASE WHEN age_group = '0-17' THEN 0 WHEN age_group = '18-39' THEN 18 ELSE CAST(SPLIT(age_group, '-')[0] AS INT) END, gender"
       ]
     },
     {
@@ -66,6 +66,75 @@
   ],
   "pages": [
     {
+      "name": "global-filters",
+      "displayName": "Filtros",
+      "pageType": "PAGE_TYPE_GLOBAL_FILTERS",
+      "layout": [
+        {
+          "widget": {
+            "name": "filter-marathon",
+            "queries": [
+              {"name": "q_finishers_source", "query": {"datasetName": "finishers_by_year", "fields": [{"name": "source", "expression": "`source`"}], "disaggregated": false}},
+              {"name": "q_summary_source", "query": {"datasetName": "summary", "fields": [{"name": "source", "expression": "`source`"}], "disaggregated": false}},
+              {"name": "q_top_countries_source", "query": {"datasetName": "top_countries", "fields": [{"name": "source", "expression": "`source`"}], "disaggregated": false}},
+              {"name": "q_demographics_source", "query": {"datasetName": "demographics", "fields": [{"name": "source", "expression": "`source`"}], "disaggregated": false}},
+              {"name": "q_weather_source", "query": {"datasetName": "weather", "fields": [{"name": "source", "expression": "`source`"}], "disaggregated": false}},
+              {"name": "q_times_source", "query": {"datasetName": "times_metrics", "fields": [{"name": "source", "expression": "`source`"}], "disaggregated": false}},
+              {"name": "q_comparison_source", "query": {"datasetName": "marathon_comparison", "fields": [{"name": "source", "expression": "`source`"}], "disaggregated": false}}
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {"fieldName": "source", "displayName": "Maratona", "queryName": "q_finishers_source"},
+                  {"fieldName": "source", "displayName": "Maratona", "queryName": "q_summary_source"},
+                  {"fieldName": "source", "displayName": "Maratona", "queryName": "q_top_countries_source"},
+                  {"fieldName": "source", "displayName": "Maratona", "queryName": "q_demographics_source"},
+                  {"fieldName": "source", "displayName": "Maratona", "queryName": "q_weather_source"},
+                  {"fieldName": "source", "displayName": "Maratona", "queryName": "q_times_source"},
+                  {"fieldName": "source", "displayName": "Maratona", "queryName": "q_comparison_source"}
+                ]
+              },
+              "frame": {"showTitle": true, "title": "Maratona"}
+            }
+          },
+          "position": {"x": 0, "y": 0, "width": 4, "height": 2}
+        },
+        {
+          "widget": {
+            "name": "filter-year",
+            "queries": [
+              {"name": "q_finishers_year", "query": {"datasetName": "finishers_by_year", "fields": [{"name": "year", "expression": "`year`"}], "disaggregated": false}},
+              {"name": "q_summary_year", "query": {"datasetName": "summary", "fields": [{"name": "year", "expression": "`year`"}], "disaggregated": false}},
+              {"name": "q_top_countries_year", "query": {"datasetName": "top_countries", "fields": [{"name": "year", "expression": "`year`"}], "disaggregated": false}},
+              {"name": "q_demographics_year", "query": {"datasetName": "demographics", "fields": [{"name": "year", "expression": "`year`"}], "disaggregated": false}},
+              {"name": "q_weather_year", "query": {"datasetName": "weather", "fields": [{"name": "year", "expression": "`year`"}], "disaggregated": false}},
+              {"name": "q_times_year", "query": {"datasetName": "times_metrics", "fields": [{"name": "year", "expression": "`year`"}], "disaggregated": false}},
+              {"name": "q_comparison_year", "query": {"datasetName": "marathon_comparison", "fields": [{"name": "year", "expression": "`year`"}], "disaggregated": false}}
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {"fieldName": "year", "displayName": "Ano", "queryName": "q_finishers_year"},
+                  {"fieldName": "year", "displayName": "Ano", "queryName": "q_summary_year"},
+                  {"fieldName": "year", "displayName": "Ano", "queryName": "q_top_countries_year"},
+                  {"fieldName": "year", "displayName": "Ano", "queryName": "q_demographics_year"},
+                  {"fieldName": "year", "displayName": "Ano", "queryName": "q_weather_year"},
+                  {"fieldName": "year", "displayName": "Ano", "queryName": "q_times_year"},
+                  {"fieldName": "year", "displayName": "Ano", "queryName": "q_comparison_year"}
+                ]
+              },
+              "frame": {"showTitle": true, "title": "Ano"}
+            }
+          },
+          "position": {"x": 4, "y": 0, "width": 4, "height": 2}
+        }
+      ]
+    },
+    {
       "name": "overview",
       "displayName": "Visao Geral",
       "pageType": "PAGE_TYPE_CANVAS",
@@ -81,7 +150,7 @@
         {
           "widget": {
             "name": "total-finishers",
-            "queries": [{"name": "main_query", "query": {"datasetName": "summary", "fields": [{"name": "total_finishers", "expression": "`total_finishers`"}], "disaggregated": true}}],
+            "queries": [{"name": "main_query", "query": {"datasetName": "summary", "fields": [{"name": "total_finishers", "expression": "SUM(`total_finishers`)"}], "disaggregated": false}}],
             "spec": {"version": 2, "widgetType": "counter", "encodings": {"value": {"fieldName": "total_finishers", "displayName": "Concluintes", "format": {"type": "number", "abbreviation": "compact"}}}, "frame": {"title": "Total de concluintes", "showTitle": true}}
           },
           "position": {"x": 0, "y": 2, "width": 3, "height": 3}
@@ -89,7 +158,7 @@
         {
           "widget": {
             "name": "total-editions",
-            "queries": [{"name": "main_query", "query": {"datasetName": "summary", "fields": [{"name": "total_editions", "expression": "`total_editions`"}], "disaggregated": true}}],
+            "queries": [{"name": "main_query", "query": {"datasetName": "summary", "fields": [{"name": "total_editions", "expression": "COUNT(DISTINCT `year`)"}], "disaggregated": false}}],
             "spec": {"version": 2, "widgetType": "counter", "encodings": {"value": {"fieldName": "total_editions", "displayName": "Edicoes"}}, "frame": {"title": "Edicoes analisadas", "showTitle": true}}
           },
           "position": {"x": 3, "y": 2, "width": 3, "height": 3}
@@ -97,7 +166,7 @@
         {
           "widget": {
             "name": "total-marathons",
-            "queries": [{"name": "main_query", "query": {"datasetName": "summary", "fields": [{"name": "total_marathons", "expression": "`total_marathons`"}], "disaggregated": true}}],
+            "queries": [{"name": "main_query", "query": {"datasetName": "summary", "fields": [{"name": "total_marathons", "expression": "COUNT(DISTINCT `source`)"}], "disaggregated": false}}],
             "spec": {"version": 2, "widgetType": "counter", "encodings": {"value": {"fieldName": "total_marathons", "displayName": "Maratonas"}}, "frame": {"title": "Maratonas", "showTitle": true}}
           },
           "position": {"x": 6, "y": 2, "width": 3, "height": 3}
@@ -105,7 +174,7 @@
         {
           "widget": {
             "name": "average-time",
-            "queries": [{"name": "main_query", "query": {"datasetName": "summary", "fields": [{"name": "avg_finish_time_hm", "expression": "`avg_finish_time_hm`"}], "disaggregated": true}}],
+            "queries": [{"name": "main_query", "query": {"datasetName": "summary", "fields": [{"name": "avg_finish_time_hm", "expression": "CONCAT(LPAD(CAST(FLOOR(AVG(`avg_finish_time_min`) * 60 / 3600) AS STRING), 2, '0'), ':', LPAD(CAST(FLOOR(PMOD(AVG(`avg_finish_time_min`) * 60, 3600) / 60) AS STRING), 2, '0'))"}], "disaggregated": false}}],
             "spec": {"version": 2, "widgetType": "counter", "encodings": {"value": {"fieldName": "avg_finish_time_hm", "displayName": "HH:MM"}}, "frame": {"title": "Tempo medio (HH:MM)", "showTitle": true}}
           },
           "position": {"x": 9, "y": 2, "width": 3, "height": 3}
@@ -121,7 +190,7 @@
         {
           "widget": {
             "name": "countries-ranking",
-            "queries": [{"name": "main_query", "query": {"datasetName": "top_countries", "fields": [{"name": "country", "expression": "`country`"}, {"name": "total_athletes", "expression": "`total_athletes`"}], "disaggregated": true}}],
+            "queries": [{"name": "main_query", "query": {"datasetName": "top_countries", "fields": [{"name": "country", "expression": "`country`"}, {"name": "total_athletes", "expression": "SUM(`total_athletes`)"}], "disaggregated": false}}],
             "spec": {"version": 3, "widgetType": "bar", "encodings": {"x": {"fieldName": "total_athletes", "scale": {"type": "quantitative"}, "displayName": "Atletas"}, "y": {"fieldName": "country", "scale": {"type": "categorical"}, "displayName": "Pais"}}, "frame": {"title": "Top 20 paises", "showTitle": true}}
           },
           "position": {"x": 8, "y": 5, "width": 4, "height": 6}
@@ -135,12 +204,54 @@
       "layout": [
         {
           "widget": {"name": "demographics-title", "multilineTextboxSpec": {"lines": ["## Perfil por faixa etaria e genero"]}},
-          "position": {"x": 0, "y": 0, "width": 12, "height": 1}
+          "position": {"x": 0, "y": 0, "width": 6, "height": 1}
+        },
+        {
+          "widget": {
+            "name": "filter-gender",
+            "queries": [
+              {"name": "q_demo_gender", "query": {"datasetName": "demographics", "fields": [{"name": "gender", "expression": "`gender`"}], "disaggregated": false}},
+              {"name": "q_times_gender", "query": {"datasetName": "times_metrics", "fields": [{"name": "gender", "expression": "`gender`"}], "disaggregated": false}}
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {"fieldName": "gender", "displayName": "Genero", "queryName": "q_demo_gender"},
+                  {"fieldName": "gender", "displayName": "Genero", "queryName": "q_times_gender"}
+                ]
+              },
+              "frame": {"showTitle": true, "title": "Genero"}
+            }
+          },
+          "position": {"x": 6, "y": 0, "width": 3, "height": 1}
+        },
+        {
+          "widget": {
+            "name": "filter-age-group",
+            "queries": [
+              {"name": "q_demo_age", "query": {"datasetName": "demographics", "fields": [{"name": "age_group", "expression": "`age_group`"}], "disaggregated": false}},
+              {"name": "q_times_age", "query": {"datasetName": "times_metrics", "fields": [{"name": "age_group", "expression": "`age_group`"}], "disaggregated": false}}
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {"fieldName": "age_group", "displayName": "Faixa etaria", "queryName": "q_demo_age"},
+                  {"fieldName": "age_group", "displayName": "Faixa etaria", "queryName": "q_times_age"}
+                ]
+              },
+              "frame": {"showTitle": true, "title": "Faixa etaria"}
+            }
+          },
+          "position": {"x": 9, "y": 0, "width": 3, "height": 1}
         },
         {
           "widget": {
             "name": "age-gender-chart",
-            "queries": [{"name": "main_query", "query": {"datasetName": "demographics", "fields": [{"name": "age_group", "expression": "`age_group`"}, {"name": "gender", "expression": "`gender`"}, {"name": "total_athletes", "expression": "`total_athletes`"}], "disaggregated": true}}],
+            "queries": [{"name": "main_query", "query": {"datasetName": "demographics", "fields": [{"name": "age_group", "expression": "`age_group`"}, {"name": "gender", "expression": "`gender`"}, {"name": "total_athletes", "expression": "SUM(`total_athletes`)"}], "disaggregated": false}}],
             "spec": {"version": 3, "widgetType": "bar", "encodings": {"x": {"fieldName": "age_group", "scale": {"type": "categorical"}, "displayName": "Faixa etaria"}, "y": {"fieldName": "total_athletes", "scale": {"type": "quantitative"}, "displayName": "Atletas"}, "color": {"fieldName": "gender", "scale": {"type": "categorical"}, "displayName": "Genero"}}, "mark": {"layout": "group"}, "frame": {"title": "Atletas por faixa etaria", "showTitle": true}}
           },
           "position": {"x": 0, "y": 1, "width": 8, "height": 6}
@@ -148,7 +259,7 @@
         {
           "widget": {
             "name": "demographics-table",
-            "queries": [{"name": "main_query", "query": {"datasetName": "demographics", "fields": [{"name": "age_group", "expression": "`age_group`"}, {"name": "gender", "expression": "`gender`"}, {"name": "total_athletes", "expression": "`total_athletes`"}, {"name": "avg_finish_time_hm", "expression": "`avg_finish_time_hm`"}], "disaggregated": true}}],
+            "queries": [{"name": "main_query", "query": {"datasetName": "demographics", "fields": [{"name": "age_group", "expression": "`age_group`"}, {"name": "gender", "expression": "`gender`"}, {"name": "total_athletes", "expression": "SUM(`total_athletes`)"}, {"name": "avg_finish_time_hm", "expression": "CONCAT(LPAD(CAST(FLOOR(AVG(`avg_finish_time_min`) * 60 / 3600) AS STRING), 2, '0'), ':', LPAD(CAST(FLOOR(PMOD(AVG(`avg_finish_time_min`) * 60, 3600) / 60) AS STRING), 2, '0'))"}], "disaggregated": false}}],
             "spec": {"version": 2, "widgetType": "table", "encodings": {"columns": [{"fieldName": "age_group", "displayName": "Faixa etaria"}, {"fieldName": "gender", "displayName": "Genero"}, {"fieldName": "total_athletes", "displayName": "Atletas"}, {"fieldName": "avg_finish_time_hm", "displayName": "Tempo medio (HH:MM)"}]}, "frame": {"title": "Detalhamento demografico", "showTitle": true}}
           },
           "position": {"x": 8, "y": 1, "width": 4, "height": 6}
@@ -189,7 +300,45 @@
       "layout": [
         {
           "widget": {"name": "times-title", "multilineTextboxSpec": {"lines": ["## Distribuicao dos tempos de chegada"]}},
-          "position": {"x": 0, "y": 0, "width": 12, "height": 1}
+          "position": {"x": 0, "y": 0, "width": 6, "height": 1}
+        },
+        {
+          "widget": {
+            "name": "filter-times-gender",
+            "queries": [
+              {"name": "q_tm_gender", "query": {"datasetName": "times_metrics", "fields": [{"name": "gender", "expression": "`gender`"}], "disaggregated": false}}
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {"fieldName": "gender", "displayName": "Genero", "queryName": "q_tm_gender"}
+                ]
+              },
+              "frame": {"showTitle": true, "title": "Genero"}
+            }
+          },
+          "position": {"x": 6, "y": 0, "width": 3, "height": 1}
+        },
+        {
+          "widget": {
+            "name": "filter-times-age",
+            "queries": [
+              {"name": "q_tm_age", "query": {"datasetName": "times_metrics", "fields": [{"name": "age_group", "expression": "`age_group`"}], "disaggregated": false}}
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {"fieldName": "age_group", "displayName": "Faixa etaria", "queryName": "q_tm_age"}
+                ]
+              },
+              "frame": {"showTitle": true, "title": "Faixa etaria"}
+            }
+          },
+          "position": {"x": 9, "y": 0, "width": 3, "height": 1}
         },
         {
           "widget": {
