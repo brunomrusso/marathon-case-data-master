@@ -208,14 +208,36 @@ Todas as tabelas Gold ficam em `marathon.gold.*` e são o ponto de consumo do da
 
 | Tabela | Finalidade |
 |---|---|
-| `gold.kpi_summary` | KPIs principais por maratona e ano: total de finishers, tempo médio, record da prova e % feminino. Ponto de entrada do dashboard. |
-| `gold.finishers_by_year` | Evolução histórica do número de finishers por maratona. Permite visualizar crescimento ou queda de participação ao longo dos anos. |
-| `gold.top_countries` | Ranking dos países com mais finishers por maratona, útil para análise de diversidade geográfica. |
-| `gold.athletes_by_country` | Contagem de atletas únicos por país e maratona, diferenciando participação individual de contagem de finishes. |
-| `gold.times_distribution` | Distribuição dos tempos de chegada em faixas (ex: < 3h, 3–4h, 4–5h, > 5h) por maratona e ano. Permite análise de perfil de desempenho. |
-| `gold.marathon_comparison` | Comparativo direto entre as quatro maratonas: tempo médio, record, total de finishers e % feminino. Ideal para gráficos de barras comparativos. |
-| `gold.age_gender_profile` | Perfil demográfico dos finishers: contagem e tempo médio por grupo etário e gênero. Permite identificar o perfil dominante em cada prova. |
-| `gold.weather_impact` | Correlação entre condições climáticas (temperatura, precipitação, vento) e desempenho médio dos atletas. Disponível somente quando `silver.marathons_with_weather` está populada. |
+| `gold.kpi_summary` | KPIs principais por maratona e ano: total de finishers, tempo médio (seg), record da prova e % feminino. Ponto de entrada do dashboard. |
+| `gold.finishers_by_year` | Evolução histórica do número de finishers por maratona e ano. |
+| `gold.top_countries` | Ranking dos países com mais finishers por maratona, filtrável por fonte e ano. Usado nos gráficos de países no dashboard. |
+| `gold.athletes_by_country` | Contagem total de atletas por país e maratona (agregado histórico, sem filtro de ano). |
+| `gold.times_distribution` | Estatísticas de distribuição (min, Q1, mediana, média, Q3, max) por maratona, ano, gênero e faixa etária. |
+| `gold.marathon_comparison` | Comparativo direto entre as quatro maratonas por ano: finishers e tempo médio de cada uma. |
+| `gold.age_gender_profile` | Perfil demográfico: contagem e tempo médio por faixa etária, gênero, fonte e ano. |
+| `gold.weather_impact` | Correlação entre temperatura, precipitação, vento e desempenho médio. Disponível somente quando `silver.marathons_with_weather` está populada. |
+
+### 12.1 Qualidade e Schema Drift
+
+A observabilidade de dados é registrada em `marathon.monitoring.data_quality_log` — uma tabela append-only com uma linha por notebook/step/run.
+
+**Comportamento com novos CSVs de anos futuros:**
+
+| Cenário | Resposta do pipeline |
+|---|---|
+| Novo CSV com **mesmo schema** | Ingestão normal; novos registros merged via Delta MERGE idempotente |
+| Novo CSV com **colunas renomeadas** | Bronze detecta drift (`schema_drift_flag = True`), status `WARN`, continua. Silver mapeia o que conseguir; colunas ausentes ficam `null` |
+| Novo CSV com **colunas extras** | Carregado normalmente na Bronze; Silver ignora colunas não mapeadas |
+| Novo CSV com **colunas obrigatórias faltando** (ex: `finish_time`) | Pipeline continua, mas registros sem tempo de conclusão são rejeitados na Silver (`rejected_records` > 0); tabelas Gold refletem apenas dados válidos |
+
+O pipeline **nunca falha por schema drift** — registra WARN no log e continua. Para checar:
+
+```sql
+SELECT layer, step, schema_drift_flag, status, details, recorded_at
+FROM marathon.monitoring.data_quality_log
+WHERE schema_drift_flag = TRUE
+ORDER BY recorded_at DESC
+```
 
 ### 13. Dashboards
 
@@ -223,27 +245,36 @@ Todas as tabelas Gold ficam em `marathon.gold.*` e são o ponto de consumo do da
 
 O dashboard oficial do case é versionado em `dashboard/databricks/marathon_dashboard.lvdash.json` e provisionado automaticamente pelo último passo de `scripts/setup_all.py`.
 
-O Terraform separado em `infrastructure/terraform/databricks/` cria:
+O Terraform em `infrastructure/terraform/databricks/` cria:
 
 - SQL Warehouse Serverless `2X-Small`, Photon habilitado, cluster único e auto-stop de 10 minutos;
 - dashboard publicado em `/Shared/marathon-case`;
-- associação automática ao catálogo `marathon` e schema `gold`;
-- outputs do warehouse, HTTP Path e dashboard.
+- outputs do warehouse, HTTP Path e ID do dashboard.
+
+Após o Terraform, o `setup_all.py` repatcheia o dashboard via API injetando os prefixos `{catalog}.gold.` explicitamente em todas as queries de dataset. Isso garante que o dashboard funcione corretamente independentemente do catálogo padrão do workspace (necessário porque o `PATCH /api/2.0/lakeview/dashboards/{id}` não preserva o `dataset_catalog` configurado pelo Terraform). Para CI usa `marathon_prod.gold.*`; para local usa `marathon.gold.*`.
 
 O setup usa `no_wait=true`: não bloqueia esperando o compute iniciar e imprime a URL publicada ao final. Na primeira consulta, o warehouse pode permanecer em `STARTING` enquanto a Azure provisiona o cluster.
 
-O dashboard possui páginas para:
+**Páginas do dashboard:**
 
-- visão executiva e KPIs;
-- evolução de concluintes e top países;
-- participação e tempo médio por país;
-- distribuição de tempos, quartis e mediana;
-- perfil por faixa etária e gênero;
-- comparação histórica entre as quatro maratonas;
-- relação entre clima e performance;
-- qualidade e observabilidade usando `marathon.monitoring.data_quality_log`.
+| Página | Conteúdo |
+|---|---|
+| Visão Geral | KPIs globais: total de finishers, edições, maratonas e tempo médio (min) |
+| Evolução de concluintes | Finishers por ano e por maratona com filtros de fonte e ano |
+| Top 20 países | Ranking de participação por país, filtráveis por maratona e ano |
+| Países — performance | Tempo médio por país, filtrável por maratona e ano |
+| Distribuição de tempos | Box-plot com quartis, mediana e média por grupo demográfico |
+| Demografia | Perfil por faixa etária e gênero (F, M, X) |
+| Comparação entre maratonas | Evolução histórica comparativa das quatro majors |
+| Clima e performance | Correlação temperatura/precipitação × tempo médio por edição |
 
-As oito tabelas de `marathon.gold` são consumidas explicitamente pelo dashboard.
+As sete tabelas de `marathon.gold` consumidas são: `kpi_summary`, `finishers_by_year`, `top_countries`, `age_gender_profile`, `weather_impact`, `times_distribution` e `marathon_comparison`.
+
+> **Re-deploy manual do dashboard:** se precisar reaplicar a definição JSON sem rodar o setup completo:
+> ```powershell
+> $env:DATABRICKS_TOKEN = (az account get-access-token --resource "2ff814a6-3304-4ab8-85cb-cd0e6f879c1d" --query accessToken -o tsv)
+> python scripts/_update_dashboard_api.py --catalog marathon
+> ```
 
 #### 13.2 Streamlit opcional
 
@@ -380,6 +411,15 @@ marathon-case-data-master/
 - **Arquivo `.env`:** centraliza somente configurações não secretas, como host, email de alerta, HTTP Path e caminho opcional no workspace.
 - **Versao Python do enable_file_events:** nao depende mais exclusivamente do PowerShell.
 - **Bicep mantido como alternativa:** arquivos `infrastructure/main.bicep` e `resources.bicep` continuam disponiveis, mas nao automatizam o metastore.
+
+### [2025] — Correções e melhorias no dashboard AI/BI
+
+- **Normalização de source no dashboard:** valores de origem padronizados para Title Case nos datasets (`berlin` → `Berlin`, `nyc` → `New York`) via `CASE` nas queries, eliminando duplicatas nos filtros.
+- **KPI tempo médio corrigido:** counter widget alterado de expressão `CONCAT` (string `HH:MM`) para `CAST(ROUND(AVG(avg_finish_time_min), 0) AS INT)`. Widgets contador do Databricks AI/BI não renderizam strings; o formato `format.precision` foi removido por ser inválido nesse tipo de widget.
+- **Países filtráveis:** dataset `country_performance` migrado de `athletes_by_country` (sem `source`/`year`) para `top_countries` (com `source`/`year`), permitindo que os filtros globais de maratona e ano atuem nos gráficos de países.
+- **Prefixo de catálogo explícito nas queries:** o `PATCH /api/2.0/lakeview/dashboards/{id}` não preserva o `dataset_catalog` do Terraform. O `setup_all.py` agora repatcheia o dashboard após o Terraform injetando `{catalog}.gold.{tabela}` em todas as queries de dataset. Script `scripts/_update_dashboard_api.py` disponível para re-deploys pontuais.
+- **Remoção do widget de qualidade:** tabela "Últimas verificações de qualidade" removida do dashboard (monitoramento continua ativo em `marathon.monitoring.data_quality_log`).
+- **Filtro de gênero sanitizado:** queries de demographics e times_metrics filtram apenas valores válidos (`F`, `M`, `X`, `NON-BINARY`, `NOT SPECIFIED`), excluindo ruído de dados brutos.
 
 ### [2025] — Ajustes de execução e correções de pipeline
 

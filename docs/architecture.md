@@ -37,8 +37,8 @@ Gera agregações e métricas para o dashboard. Tabelas **externas** armazenadas
 |---|---|
 | `gold.kpi_summary` | KPIs principais por maratona e ano: total de finishers, tempo médio, record da prova e % feminino. Ponto de entrada do dashboard. |
 | `gold.finishers_by_year` | Evolução histórica do número de finishers por maratona ao longo dos anos. |
-| `gold.top_countries` | Ranking dos países com mais finishers por maratona, para análise de diversidade geográfica. |
-| `gold.athletes_by_country` | Contagem de atletas únicos por país e maratona. |
+| `gold.top_countries` | Ranking dos países com mais finishers por maratona e ano — usado nos gráficos de países do dashboard (filtráveis por fonte e ano). |
+| `gold.athletes_by_country` | Contagem total de atletas por país e maratona (agregado histórico, sem partição por ano). |
 | `gold.times_distribution` | Distribuição dos tempos de chegada em faixas (ex: < 3h, 3–4h, 4–5h, > 5h) por maratona e ano. |
 | `gold.marathon_comparison` | Comparativo direto entre as quatro maratonas: tempo médio, record, total e % feminino. |
 | `gold.age_gender_profile` | Perfil demográfico dos finishers: contagem e tempo médio por grupo etário e gênero. |
@@ -83,12 +83,13 @@ Gera agregações e métricas para o dashboard. Tabelas **externas** armazenadas
 - Delta Lake com partições por `source` e `year`.
 - Ingestão event-driven: cluster só liga quando arquivos chegam.
 - Ingestão de London otimizada com leitura em lote ao invés de uma chamada por arquivo.
-- **Observabilidade:** tabela `monitoring.data_quality_log` (append-only, `mergeSchema=true`) registra por step/notebook:
+- **Observabilidade:** tabela `marathon.monitoring.data_quality_log` (append-only, `mergeSchema=true`) registra por step/notebook:
   - `row_count_in` / `row_count_out`
   - `% nulos` em colunas-chave (`key_columns_null_pct_json`)
   - `rejected_records` (inclui arquivos ignorados no orquestrador)
-  - `schema_drift_flag`
+  - `schema_drift_flag` — `True` quando colunas do CSV diferem do schema anterior (Bronze) ou do schema esperado (Silver)
   - `execution_time_sec` — identifica gargalos por etapa
+  - **O pipeline nunca falha por schema drift** — registra `WARN` e continua. Dados com colunas obrigatórias ausentes são marcados como `rejected_records`.
 - **Rastreabilidade end-to-end:** `run_id` (UUID) e `batch_id` (timestamp) gerados no `00_bronze_orchestrator` e propagados via `dbutils.jobs.taskValues` para todos os notebooks downstream.
 - **Alertas:** notificações por email configuradas no Databricks Workflow para falhas (`ALERT_EMAIL`).
 - **Lineage:** o Unity Catalog captura automaticamente lineage de leitura/escrita. Visualize em **Catalog > Tables > Lineage** nas tabelas Silver e Gold.
@@ -101,3 +102,8 @@ Gera agregações e métricas para o dashboard. Tabelas **externas** armazenadas
 | `marathon_metadata.csv` em `raw/` abortava o orquestrador | Arquivos não reconhecidos agora são ignorados com log, sem falha |
 | Conflito `round`/`sum`/`min`/`max` PySpark vs Python em Gold | Funções PySpark renomeadas para `spark_round`, `spark_sum`, `spark_min`, `spark_max`; built-ins Python preservados |
 | Container ADLS ausente após limpeza de storage | `upload_raw_data.py` cria o container automaticamente se não existir |
+| `PATCH /api/2.0/lakeview/dashboards/{id}` apaga `dataset_catalog` do Terraform | `setup_all.py` repatcheia o dashboard após o Terraform injetando `{catalog}.gold.{tabela}` explicitamente em todas as queries via regex. Garante que o dashboard funcione em qualquer catálogo (`marathon` local, `marathon_prod` CI) sem depender do contexto do workspace |
+| Filtros do dashboard com valores duplicados (`berlin` e `Berlin`) | Source normalizado para Title Case via `CASE WHEN` em todos os datasets; `marathon_comparison` já emitia valores capitalizados — os filtros agora mostram apenas `Berlin`, `Chicago`, `London`, `New York` |
+| KPI "Tempo médio" exibia "No data" | Counter widget do Databricks AI/BI não aceita string (`CONCAT HH:MM`) nem `format.precision`. Substituído por `CAST(ROUND(AVG(avg_finish_time_min), 0) AS INT)` sem spec de format |
+| Gráficos de países não respondiam a filtros | Dataset `country_performance` usava `athletes_by_country` (sem colunas `source`/`year`). Migrado para `top_countries` (com `source`/`year`), adicionado ao filtro global |
+| Terraform 32-bit (`windows_386`) — provider Databricks incompatível | `find_databricks_terraform()` no `setup_all.py` detecta e rejeita binários `windows_386`; exige Terraform AMD64. Script `_update_dashboard_api.py` disponível para re-deploy do dashboard sem Terraform |
