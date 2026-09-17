@@ -539,7 +539,7 @@
                   "fields": [
                     {
                       "name": "avg_finish_time_min",
-                      "expression": "ROUND(AVG(`avg_finish_time_min`), 0)"
+                      "expression": "CAST(ROUND(AVG(\\\u0007vg_finish_time_min\\), 0) AS INT)"
                     }
                   ],
                   "disaggregated": false
@@ -552,11 +552,7 @@
               "encodings": {
                 "value": {
                   "fieldName": "avg_finish_time_min",
-                  "displayName": "min",
-                  "format": {
-                    "type": "number",
-                    "precision": 0
-                  }
+                  "displayName": "min"
                 }
               },
               "frame": {
