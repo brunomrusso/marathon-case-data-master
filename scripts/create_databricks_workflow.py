@@ -115,6 +115,7 @@ def main():
                     "spark_version": "14.3.x-scala2.12",
                     "node_type_id": "Standard_DS3_v2",
                     "num_workers": 0,
+                    "data_security_mode": "SINGLE_USER",
                     "spark_conf": {
                         "spark.databricks.cluster.profile": "singleNode",
                         "spark.master": "local[*]",
@@ -142,7 +143,8 @@ def main():
             headers=headers,
             json={"job_id": job_id, "new_settings": job},
         )
-        resp.raise_for_status()
+        if not resp.ok:
+            raise RuntimeError(f"Erro ao atualizar workflow: {resp.status_code} - {resp.text}")
         print(f"Workflow atualizado: job_id={job_id}")
     else:
         resp = requests.post(
