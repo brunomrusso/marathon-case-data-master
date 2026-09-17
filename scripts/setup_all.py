@@ -722,6 +722,49 @@ def step_create_workflow(state):
     mark_completed(state, "create_workflow")
 
 
+def _patch_dashboard_catalog(host: str, token: str, dashboard_id: str, warehouse_id: str, catalog: str):
+    """Repatch the AI/BI dashboard injecting fully-qualified catalog.gold.table references."""
+    import re as _re
+
+    GOLD_TABLES = [
+        "kpi_summary", "finishers_by_year", "top_countries",
+        "age_gender_profile", "weather_impact", "times_distribution", "marathon_comparison",
+    ]
+
+    def _add_prefix(query: str) -> str:
+        result = query
+        for tbl in GOLD_TABLES:
+            pattern = r'(?<![.\w])' + _re.escape(tbl) + r'(?![.\w])'
+            result = _re.sub(pattern, f"{catalog}.gold.{tbl}", result)
+        return result
+
+    dash_file = PROJECT_ROOT / "dashboard" / "databricks" / "marathon_dashboard.lvdash.json"
+    dash = json.loads(dash_file.read_text(encoding="utf-8"))
+    for ds in dash.get("datasets", []):
+        ds["queryLines"] = [_add_prefix(q) for q in ds.get("queryLines", [])]
+
+    serialized = json.dumps(dash, ensure_ascii=False)
+    hdrs = get_databricks_headers(token)
+    hdrs["Content-Type"] = "application/json"
+
+    resp = requests.patch(
+        f"{host}/api/2.0/lakeview/dashboards/{dashboard_id}",
+        headers=hdrs,
+        json={"serialized_dashboard": serialized},
+        timeout=30,
+    )
+    resp.raise_for_status()
+
+    resp2 = requests.post(
+        f"{host}/api/2.0/lakeview/dashboards/{dashboard_id}/published",
+        headers=hdrs,
+        json={"warehouse_id": warehouse_id, "embed_credentials": True},
+        timeout=30,
+    )
+    resp2.raise_for_status()
+    print_ok(f"Dashboard repatched com prefixo '{catalog}.gold'")
+
+
 def step_create_dashboard(state):
     print_step(STEPS.index("create_dashboard") + 1, "Criando SQL Warehouse e dashboard AI/BI")
 
@@ -761,6 +804,14 @@ def step_create_dashboard(state):
     save_state(state)
     print_ok(f"SQL Warehouse: {warehouse_id}")
     print_ok(f"Dashboard publicado: {dashboard_url}")
+
+    # Repatch the dashboard via API to inject fully-qualified catalog.schema.table
+    # references in all dataset queries. This ensures the dashboard works even
+    # when the Terraform dataset_catalog context is lost (e.g. after API-only updates).
+    catalog_name = os.environ.get("CATALOG_NAME", "marathon")
+    print_ok(f"Injetando prefixo de catalogo '{catalog_name}.gold' nas queries do dashboard...")
+    _patch_dashboard_catalog(host, token, dashboard_id, warehouse_id, catalog_name)
+
     mark_completed(state, "create_dashboard")
 
 
