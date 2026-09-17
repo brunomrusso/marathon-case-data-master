@@ -31,12 +31,6 @@ resource "azurerm_resource_group" "bootstrap" {
   tags     = var.tags
 }
 
-resource "azurerm_resource_group" "target" {
-  name     = "rg-marathon-prod"
-  location = var.location
-  tags     = var.tags
-}
-
 resource "azurerm_management_lock" "bootstrap" {
   name       = "protect-marathon-bootstrap"
   scope      = azurerm_resource_group.bootstrap.id
@@ -105,13 +99,13 @@ resource "azurerm_federated_identity_credential" "github_production" {
 }
 
 resource "azurerm_role_assignment" "github_target_contributor" {
-  scope                = azurerm_resource_group.target.id
+  scope                = "/subscriptions/${data.azurerm_client_config.current.subscription_id}"
   role_definition_name = "Contributor"
   principal_id         = azurerm_user_assigned_identity.github.principal_id
 }
 
 resource "azurerm_role_assignment" "github_target_rbac" {
-  scope                = azurerm_resource_group.target.id
+  scope                = "/subscriptions/${data.azurerm_client_config.current.subscription_id}"
   role_definition_name = "User Access Administrator"
   principal_id         = azurerm_user_assigned_identity.github.principal_id
 }

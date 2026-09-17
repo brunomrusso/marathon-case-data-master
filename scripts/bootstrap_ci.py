@@ -42,8 +42,10 @@ def main():
         capture_output=True,
         text=True,
     ).stdout
-    if group_exists and "azurerm_resource_group.target" not in state:
-        raise RuntimeError("Remova o ambiente descartavel rg-marathon-prod antes de executar o bootstrap.")
+    if "azurerm_resource_group.target" in state:
+        run([terraform, "state", "rm", "azurerm_resource_group.target"])
+    if group_exists:
+        print("rg-marathon-prod existente sera gerenciado pela esteira de release.")
     run([terraform, "apply", "-auto-approve", "-input=false"])
     result = subprocess.run(
         [terraform, "output", "-json"],

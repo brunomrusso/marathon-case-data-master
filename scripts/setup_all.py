@@ -291,11 +291,13 @@ def step_deploy_terraform(state):
     print_info("terraform apply (pode levar 5-10 minutos)")
     for attempt in range(1, 4):
         try:
-            run_command(["terraform", "apply", "-auto-approve"], capture=False, check=True, cwd=str(TERRAFORM_DIR))
+            output = run_command(["terraform", "apply", "-auto-approve"], capture=True, check=True, cwd=str(TERRAFORM_DIR))
+            if output:
+                print(output)
             break
-        except RuntimeError:
-            if attempt < 3:
-                print_info(f"Terraform apply falhou (tentativa {attempt}/3). Aguardando 30s para propagacao do ARM...")
+        except RuntimeError as exc:
+            if "ResourceGroupNotFound" in str(exc) and attempt < 3:
+                print_info(f"Resource Group ainda em propagacao (tentativa {attempt}/3). Aguardando 30s...")
                 time.sleep(30)
             else:
                 raise
