@@ -62,10 +62,14 @@ def api(method, host, headers, path, **kwargs):
     return response
 
 
-def require_deleted(response, resource):
-    if response.status_code not in (200, 204, 404):
-        raise RuntimeError(f"Falha ao excluir {resource}: {response.status_code} - {response.text}")
-    print(f"[OK] {resource} removido ou inexistente")
+def require_deleted(response, resource, allow_permission_error=False):
+    if response.status_code in (200, 204, 404):
+        print(f"[OK] {resource} removido ou inexistente")
+        return
+    if allow_permission_error and response.status_code == 403:
+        print(f"[SKIP] {resource}: sem permissao (403) — sera orphan apos exclusao do RG")
+        return
+    raise RuntimeError(f"Falha ao excluir {resource}: {response.status_code} - {response.text}")
 
 
 def stop_and_delete_jobs(host, headers):
@@ -93,12 +97,14 @@ def clean_unity_catalog(host, headers, catalog):
         require_deleted(
             api("DELETE", host, headers, f"/api/2.1/unity-catalog/external-locations/{location}", params={"force": "true"}),
             f"external location {location}",
+            allow_permission_error=True,
         )
     for suffix in ("", "-v2"):
         credential = f"{prefix}-storage-credential{suffix}"
         require_deleted(
             api("DELETE", host, headers, f"/api/2.1/unity-catalog/storage-credentials/{credential}", params={"force": "true"}),
             f"storage credential {credential}",
+            allow_permission_error=True,
         )
 
 
