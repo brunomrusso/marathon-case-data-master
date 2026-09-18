@@ -25,9 +25,12 @@ import base64
 import json
 import os
 import shutil
+import socket
+import ssl
 import subprocess
 import sys
 import time
+import urllib.request
 import webbrowser
 from pathlib import Path
 
@@ -279,22 +282,16 @@ def step_azure_login(state):
     mark_completed(state, "azure_login")
 
 
-def _purge_soft_deleted_keyvault(terraform_dir: Path):
-    """Purga Key Vault em soft-delete antes do terraform apply.
-
-    Quando destroy_all.py deleta o resource group, o Key Vault vai para
-    soft-delete (7 dias). Na próxima execução, o azurerm provider tenta
-    recuperá-lo automaticamente e chama GetCertificateContacts no data
-    plane — endpoint que pode não responder em runners de CI, causando
-    context deadline exceeded. Purgar antes evita a tentativa de recover.
-    """
-    # Deriva o nome do vault a partir do diretório Terraform:
-    # infra/terraform/ci/azure → environment=prod → kv-marathon-prod
-    # infra/terraform           → environment=case → kv-marathon-case
+def _keyvault_name_from_dir(terraform_dir: Path) -> str:
+    """Deriva o nome do Key Vault a partir do diretório Terraform."""
     tf_str = str(terraform_dir).replace("\\", "/")
     environment = "prod" if "/ci/" in tf_str else "case"
-    vault_name = f"kv-marathon-{environment}"
+    return f"kv-marathon-{environment}"
 
+
+def _purge_soft_deleted_keyvault(terraform_dir: Path):
+    """Purga Key Vault em soft-delete antes do terraform apply."""
+    vault_name = _keyvault_name_from_dir(terraform_dir)
     try:
         print_info(f"Verificando Key Vault soft-deleted '{vault_name}'...")
         raw = run_command(
@@ -313,9 +310,48 @@ def _purge_soft_deleted_keyvault(terraform_dir: Path):
             ["az", "keyvault", "purge", "--name", vault_name, "--location", location],
             capture=False, check=True,
         )
-        print_ok(f"Key Vault '{vault_name}' purgado — Terraform criará novo vault sem recover.")
+        print_ok(f"Key Vault '{vault_name}' purgado.")
     except Exception as exc:
         print_warn(f"Nao foi possivel purgar Key Vault soft-deleted (continuando): {exc}")
+
+
+def _wait_for_keyvault_endpoint(vault_name: str, max_wait_seconds: int = 600) -> bool:
+    """Aguarda o data plane do Key Vault responder antes de continuar.
+
+    O azurerm provider chama GetCertificateContacts no endpoint
+    {vault}.vault.azure.net após criar o vault. Em runners de CI, esse
+    endpoint pode demorar vários minutos para inicializar após uma criação
+    do zero. Em vez de esperar um tempo fixo, fazemos polling ativo: assim
+    que o endpoint retornar QUALQUER resposta HTTP (mesmo 401/403),
+    sabemos que está pronto e o provider conseguirá completar o Read.
+    """
+    url = f"https://{vault_name}.vault.azure.net/"
+    deadline = time.time() + max_wait_seconds
+    ctx = ssl.create_default_context()
+    elapsed = 0
+    print_info(f"Aguardando data plane do Key Vault '{vault_name}' inicializar (max {max_wait_seconds}s)...")
+    while time.time() < deadline:
+        try:
+            req = urllib.request.Request(
+                url,
+                headers={"Authorization": "Bearer dummy"},
+            )
+            urllib.request.urlopen(req, timeout=10, context=ctx)
+            print_ok(f"Key Vault endpoint respondeu ({elapsed}s).")
+            return True
+        except urllib.error.HTTPError as e:
+            # 400/401/403 = endpoint está ativo (erro de auth é esperado)
+            if e.code in (400, 401, 403):
+                print_ok(f"Key Vault endpoint ativo (HTTP {e.code}, {elapsed}s).")
+                return True
+        except Exception:
+            pass
+        time.sleep(15)
+        elapsed = int(time.time() - (deadline - max_wait_seconds))
+        if elapsed % 60 == 0 and elapsed > 0:
+            print_info(f"  Key Vault ainda inicializando... ({elapsed}s)")
+    print_warn(f"Key Vault endpoint nao respondeu em {max_wait_seconds}s.")
+    return False
 
 
 def step_deploy_terraform(state):
@@ -330,10 +366,7 @@ def step_deploy_terraform(state):
     _purge_soft_deleted_keyvault(TERRAFORM_DIR)
 
     print_info("terraform apply (pode levar 5-10 minutos)")
-    # Erros do Key Vault: provider chama GetCertificateContacts no data
-    # plane (kv-*.vault.azure.net) que demora 3-5 min para propagar DNS
-    # após criação do vault. Retry com espera longa resolve sem mudar infra.
-    KEYVAULT_DNS_ERRORS = (
+    KEYVAULT_ERRORS = (
         "GetCertificateContacts",
         "keyvault.BaseClient",
     )
@@ -347,7 +380,8 @@ def step_deploy_terraform(state):
         "ServiceUnavailable",
         "Throttling",
     )
-    MAX_ATTEMPTS = 6
+    vault_name = _keyvault_name_from_dir(TERRAFORM_DIR)
+    MAX_ATTEMPTS = 4
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
             output = run_command(["terraform", "apply", "-auto-approve"], capture=True, check=True, cwd=str(TERRAFORM_DIR))
@@ -356,17 +390,15 @@ def step_deploy_terraform(state):
             break
         except RuntimeError as exc:
             err = str(exc)
-            is_keyvault = any(e in err for e in KEYVAULT_DNS_ERRORS)
+            is_keyvault = any(e in err for e in KEYVAULT_ERRORS)
             is_transient = any(e in err for e in TRANSIENT_TF_ERRORS)
             if is_keyvault and attempt < MAX_ATTEMPTS:
-                # Key Vault data plane pode levar 3-5 min para propagar.
-                # Vault foi criado mas o provider nao conseguiu fazer o Read.
-                # Aguarda propagacao; proxima tentativa re-usa o vault existente.
-                wait = 180  # 3 minutos
-                print_info(f"Key Vault data plane propagando (tentativa {attempt}/{MAX_ATTEMPTS}): aguardando {wait}s...")
-                time.sleep(wait)
+                # Vault criado, mas data plane ainda inicializando.
+                # Polling ativo: aguarda até o endpoint responder (max 10min).
+                print_info(f"Key Vault data plane nao disponivel (tentativa {attempt}/{MAX_ATTEMPTS}).")
+                _wait_for_keyvault_endpoint(vault_name, max_wait_seconds=600)
             elif is_transient and attempt < MAX_ATTEMPTS:
-                wait = min(30 * attempt, 90)  # 30s, 60s, 90s max
+                wait = min(30 * attempt, 90)
                 print_info(f"Erro transiente no Terraform (tentativa {attempt}/{MAX_ATTEMPTS}): retrying em {wait}s...")
                 time.sleep(wait)
             else:
