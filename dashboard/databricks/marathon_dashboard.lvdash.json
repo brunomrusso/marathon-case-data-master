@@ -562,29 +562,19 @@
               }
             ],
             "spec": {
-              "version": 3,
+              "version": 2,
               "widgetType": "table",
               "encodings": {
                 "columns": [
                   {
-                    "booleanTrueLabel": "yes",
-                    "booleanFalseLabel": "no",
-                    "visible": true,
                     "fieldName": "avg_finish_time_hm",
-                    "title": "",
-                    "type": "string",
-                    "displayAs": "string",
-                    "alignContent": "center"
+                    "displayName": "Tempo medio"
                   }
                 ]
               },
-              "invisibleColumns": [],
-              "condensed": true,
-              "withRowNumber": false,
               "frame": {
                 "title": "Tempo medio",
-                "showTitle": true,
-                "description": ""
+                "showTitle": true
               }
             }
           },

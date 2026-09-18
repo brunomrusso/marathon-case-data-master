@@ -55,6 +55,10 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Teardown previous environment (clean slate)
+        run: python scripts/destroy_all.py --env prod --yes
+        continue-on-error: true
+
       - name: Download immutable seed data
         run: |
           mkdir -p data/raw

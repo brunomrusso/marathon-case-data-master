@@ -148,6 +148,28 @@ def _try_recover_orphan(host, token, resource_type, resource_path, name):
     return False
 
 
+def _validate_storage_credential(host, token, cred_name, access_connector_id):
+    """Validate that an existing storage credential works by checking via API.
+    Returns True if the credential appears valid (passes UC validation)."""
+    try:
+        resp = workspace_api("GET", host, token, f"/api/2.1/unity-catalog/storage-credentials/{cred_name}")
+        if resp.status_code != 200:
+            return False
+        # Ask UC to validate the credential
+        val = workspace_api("POST", host, token, f"/api/2.1/unity-catalog/storage-credentials/{cred_name}/validate",
+                            {"external_location_name": None})
+        if val.status_code == 200:
+            results = val.json().get("results", [])
+            # Any operation that fails indicates a broken credential
+            failed = [r for r in results if r.get("result") == "FAIL"]
+            if failed:
+                print(f"  Credencial '{cred_name}' falhou validacao: {failed[0].get('message','')}")
+                return False
+        return True
+    except Exception:
+        return True  # assume ok if validation API is unavailable
+
+
 def create_storage_credential(host, token, name, external_location_name, access_connector_id):
     """Create or recover storage credential. Returns (recreated: bool, actual_name: str)."""
     print(f"Garantindo que a storage credential '{name}' esteja correta...")
@@ -155,8 +177,12 @@ def create_storage_credential(host, token, name, external_location_name, access_
     if current.status_code == 200:
         current_connector = current.json().get("azure_managed_identity", {}).get("access_connector_id", "")
         if current_connector.lower() == access_connector_id.lower():
-            print(f"Storage credential '{name}' ja aponta para o Access Connector atual")
-            return False, name
+            # ARM resource ID matches, but the managed identity may have been recreated.
+            # Validate the credential actually works before skipping recreation.
+            if _validate_storage_credential(host, token, name, access_connector_id):
+                print(f"Storage credential '{name}' ja aponta para o Access Connector atual e esta valida")
+                return False, name
+            print(f"Storage credential '{name}' aponta para o mesmo ARM ID mas falhou validacao — recriando...")
         del_ext = workspace_api("DELETE", host, token, f"/api/2.1/unity-catalog/external-locations/{external_location_name}", params={"force": "true"})
         if del_ext.status_code not in (200, 204, 404):
             raise RuntimeError(f"Erro ao remover external location antiga: {del_ext.status_code} - {del_ext.text}")
