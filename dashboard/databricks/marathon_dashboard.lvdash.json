@@ -430,14 +430,14 @@
               {
                 "name": "main_query",
                 "query": {
-                  "datasetName": "kpi_global",
+                  "datasetName": "summary",
                   "fields": [
                     {
                       "name": "total_finishers",
-                      "expression": "total_finishers"
+                      "expression": "SUM(total_finishers)"
                     }
                   ],
-                  "disaggregated": true
+                  "disaggregated": false
                 }
               }
             ],
@@ -470,14 +470,14 @@
               {
                 "name": "main_query",
                 "query": {
-                  "datasetName": "kpi_global",
+                  "datasetName": "summary",
                   "fields": [
                     {
                       "name": "total_editions",
-                      "expression": "total_editions"
+                      "expression": "COUNT(DISTINCT year)"
                     }
                   ],
-                  "disaggregated": true
+                  "disaggregated": false
                 }
               }
             ],
@@ -510,14 +510,14 @@
               {
                 "name": "main_query",
                 "query": {
-                  "datasetName": "kpi_global",
+                  "datasetName": "summary",
                   "fields": [
                     {
                       "name": "total_marathons",
-                      "expression": "total_marathons"
+                      "expression": "COUNT(DISTINCT source)"
                     }
                   ],
-                  "disaggregated": true
+                  "disaggregated": false
                 }
               }
             ],
@@ -550,14 +550,14 @@
               {
                 "name": "main_query",
                 "query": {
-                  "datasetName": "kpi_global",
+                  "datasetName": "summary",
                   "fields": [
                     {
                       "name": "avg_finish_time_hm",
-                      "expression": "avg_finish_time_hm"
+                      "expression": "CONCAT(CAST(FLOOR(AVG(avg_finish_time_min) / 60) AS INT), 'h ', LPAD(CAST(ROUND(MOD(AVG(avg_finish_time_min), 60), 0) AS INT), 2, '0'), 'm')"
                     }
                   ],
-                  "disaggregated": true
+                  "disaggregated": false
                 }
               }
             ],
@@ -568,13 +568,14 @@
                 "columns": [
                   {
                     "fieldName": "avg_finish_time_hm",
-                    "displayName": "Tempo medio"
+                    "displayName": ""
                   }
                 ]
               },
               "frame": {
                 "title": "Tempo medio",
-                "showTitle": true
+                "showTitle": true,
+                "description": ""
               }
             }
           },
