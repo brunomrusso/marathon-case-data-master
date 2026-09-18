@@ -289,16 +289,29 @@ def step_deploy_terraform(state):
     run_command(terraform_init_command("terraform", "platform.tfstate"), capture=False, check=True, cwd=str(TERRAFORM_DIR))
 
     print_info("terraform apply (pode levar 5-10 minutos)")
-    for attempt in range(1, 4):
+    TRANSIENT_TF_ERRORS = (
+        "ResourceGroupNotFound",
+        "context deadline exceeded",
+        "RetryableError",
+        "StatusCode=429",
+        "connection reset by peer",
+        "TooManyRequests",
+        "ServiceUnavailable",
+        "Throttling",
+    )
+    for attempt in range(1, 5):
         try:
             output = run_command(["terraform", "apply", "-auto-approve"], capture=True, check=True, cwd=str(TERRAFORM_DIR))
             if output:
                 print(output)
             break
         except RuntimeError as exc:
-            if "ResourceGroupNotFound" in str(exc) and attempt < 3:
-                print_info(f"Resource Group ainda em propagacao (tentativa {attempt}/3). Aguardando 30s...")
-                time.sleep(30)
+            err = str(exc)
+            is_transient = any(e in err for e in TRANSIENT_TF_ERRORS)
+            if is_transient and attempt < 4:
+                wait = 30 * attempt  # 30s, 60s, 90s
+                print_info(f"Erro transiente no Terraform (tentativa {attempt}/4): retrying em {wait}s...")
+                time.sleep(wait)
             else:
                 raise
 
