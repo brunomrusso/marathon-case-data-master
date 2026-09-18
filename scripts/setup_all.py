@@ -279,6 +279,45 @@ def step_azure_login(state):
     mark_completed(state, "azure_login")
 
 
+def _purge_soft_deleted_keyvault(terraform_dir: Path):
+    """Purga Key Vault em soft-delete antes do terraform apply.
+
+    Quando destroy_all.py deleta o resource group, o Key Vault vai para
+    soft-delete (7 dias). Na próxima execução, o azurerm provider tenta
+    recuperá-lo automaticamente e chama GetCertificateContacts no data
+    plane — endpoint que pode não responder em runners de CI, causando
+    context deadline exceeded. Purgar antes evita a tentativa de recover.
+    """
+    # Deriva o nome do vault a partir do diretório Terraform:
+    # infra/terraform/ci/azure → environment=prod → kv-marathon-prod
+    # infra/terraform           → environment=case → kv-marathon-case
+    tf_str = str(terraform_dir).replace("\\", "/")
+    environment = "prod" if "/ci/" in tf_str else "case"
+    vault_name = f"kv-marathon-{environment}"
+
+    try:
+        print_info(f"Verificando Key Vault soft-deleted '{vault_name}'...")
+        raw = run_command(
+            ["az", "keyvault", "list-deleted",
+             "--query", f"[?name=='{vault_name}']",
+             "-o", "json"],
+            capture=True, check=False,
+        )
+        deleted = json.loads(raw or "[]")
+        if not deleted:
+            print_info(f"Nenhum Key Vault soft-deleted encontrado para '{vault_name}'.")
+            return
+        location = deleted[0].get("properties", {}).get("location", "eastus")
+        print_info(f"Purgando Key Vault soft-deleted '{vault_name}' (regiao: {location})...")
+        run_command(
+            ["az", "keyvault", "purge", "--name", vault_name, "--location", location],
+            capture=False, check=True,
+        )
+        print_ok(f"Key Vault '{vault_name}' purgado — Terraform criará novo vault sem recover.")
+    except Exception as exc:
+        print_warn(f"Nao foi possivel purgar Key Vault soft-deleted (continuando): {exc}")
+
+
 def step_deploy_terraform(state):
     print_step(STEPS.index("deploy_terraform") + 1, "Provisionando infraestrutura Azure via Terraform")
 
@@ -287,6 +326,8 @@ def step_deploy_terraform(state):
 
     print_info("terraform init")
     run_command(terraform_init_command("terraform", "platform.tfstate"), capture=False, check=True, cwd=str(TERRAFORM_DIR))
+
+    _purge_soft_deleted_keyvault(TERRAFORM_DIR)
 
     print_info("terraform apply (pode levar 5-10 minutos)")
     TRANSIENT_TF_ERRORS = (
