@@ -563,19 +563,16 @@
             ],
             "spec": {
               "version": 2,
-              "widgetType": "table",
+              "widgetType": "counter",
               "encodings": {
-                "columns": [
-                  {
-                    "fieldName": "avg_finish_time_hm",
-                    "displayName": ""
-                  }
-                ]
+                "value": {
+                  "fieldName": "avg_finish_time_hm",
+                  "displayName": "HH:MM"
+                }
               },
               "frame": {
                 "title": "Tempo medio",
-                "showTitle": true,
-                "description": ""
+                "showTitle": true
               }
             }
           },
