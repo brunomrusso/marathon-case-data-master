@@ -550,14 +550,14 @@
               {
                 "name": "main_query",
                 "query": {
-                  "datasetName": "summary",
+                  "datasetName": "kpi_global",
                   "fields": [
                     {
                       "name": "avg_finish_time_hm",
-                      "expression": "CONCAT(CAST(FLOOR(AVG(avg_finish_time_min) / 60) AS INT), 'h ', LPAD(CAST(ROUND(MOD(AVG(avg_finish_time_min), 60), 0) AS INT), 2, '0'), 'm')"
+                      "expression": "avg_finish_time_hm"
                     }
                   ],
-                  "disaggregated": false
+                  "disaggregated": true
                 }
               }
             ],
