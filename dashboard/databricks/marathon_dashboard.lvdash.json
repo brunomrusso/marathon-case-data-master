@@ -1,6 +1,13 @@
 {
   "datasets": [
     {
+      "name": "kpi_global",
+      "displayName": "KPIs globais",
+      "queryLines": [
+        "SELECT CAST(SUM(total_athletes) AS BIGINT) AS total_finishers, COUNT(DISTINCT year) AS total_editions, COUNT(DISTINCT source) AS total_marathons, ROUND(AVG(avg_finish_time_sec) / 60.0, 0) AS avg_finish_time_min FROM kpi_summary WHERE avg_finish_time_sec IS NOT NULL"
+      ]
+    },
+    {
       "name": "summary",
       "displayName": "Indicadores gerais",
       "queryLines": [
@@ -411,14 +418,14 @@
               {
                 "name": "main_query",
                 "query": {
-                  "datasetName": "summary",
+                  "datasetName": "kpi_global",
                   "fields": [
                     {
                       "name": "total_finishers",
-                      "expression": "SUM(`total_finishers`)"
+                      "expression": "total_finishers"
                     }
                   ],
-                  "disaggregated": false
+                  "disaggregated": true
                 }
               }
             ],
@@ -428,11 +435,7 @@
               "encodings": {
                 "value": {
                   "fieldName": "total_finishers",
-                  "displayName": "Concluintes",
-                  "format": {
-                    "type": "number",
-                    "abbreviation": "compact"
-                  }
+                  "displayName": "Finishers"
                 }
               },
               "frame": {
@@ -455,14 +458,14 @@
               {
                 "name": "main_query",
                 "query": {
-                  "datasetName": "summary",
+                  "datasetName": "kpi_global",
                   "fields": [
                     {
                       "name": "total_editions",
-                      "expression": "COUNT(DISTINCT `year`)"
+                      "expression": "total_editions"
                     }
                   ],
-                  "disaggregated": false
+                  "disaggregated": true
                 }
               }
             ],
@@ -495,14 +498,14 @@
               {
                 "name": "main_query",
                 "query": {
-                  "datasetName": "summary",
+                  "datasetName": "kpi_global",
                   "fields": [
                     {
                       "name": "total_marathons",
-                      "expression": "COUNT(DISTINCT `source`)"
+                      "expression": "total_marathons"
                     }
                   ],
-                  "disaggregated": false
+                  "disaggregated": true
                 }
               }
             ],
@@ -535,14 +538,14 @@
               {
                 "name": "main_query",
                 "query": {
-                  "datasetName": "summary",
+                  "datasetName": "kpi_global",
                   "fields": [
                     {
                       "name": "avg_finish_time_min",
-                      "expression": "CAST(ROUND(AVG(\\\u0007vg_finish_time_min\\), 0) AS INT)"
+                      "expression": "avg_finish_time_min"
                     }
                   ],
-                  "disaggregated": false
+                  "disaggregated": true
                 }
               }
             ],
