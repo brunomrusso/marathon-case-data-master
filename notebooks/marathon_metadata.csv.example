@@ -1,5 +1,113 @@
 source,year,marathon_name,city,country,latitude,longitude,race_date
+berlin,1999,Berlin Marathon,Berlin,DEU,52.5200,13.4050,1999-09-26
+berlin,2000,Berlin Marathon,Berlin,DEU,52.5200,13.4050,2000-09-24
+berlin,2001,Berlin Marathon,Berlin,DEU,52.5200,13.4050,2001-09-30
+berlin,2002,Berlin Marathon,Berlin,DEU,52.5200,13.4050,2002-09-29
+berlin,2003,Berlin Marathon,Berlin,DEU,52.5200,13.4050,2003-09-28
+berlin,2004,Berlin Marathon,Berlin,DEU,52.5200,13.4050,2004-09-26
+berlin,2005,Berlin Marathon,Berlin,DEU,52.5200,13.4050,2005-09-25
+berlin,2006,Berlin Marathon,Berlin,DEU,52.5200,13.4050,2006-09-24
+berlin,2007,Berlin Marathon,Berlin,DEU,52.5200,13.4050,2007-09-30
+berlin,2008,Berlin Marathon,Berlin,DEU,52.5200,13.4050,2008-09-28
+berlin,2009,Berlin Marathon,Berlin,DEU,52.5200,13.4050,2009-09-20
+berlin,2010,Berlin Marathon,Berlin,DEU,52.5200,13.4050,2010-09-26
+berlin,2011,Berlin Marathon,Berlin,DEU,52.5200,13.4050,2011-09-25
+berlin,2012,BMW Berlin Marathon,Berlin,DEU,52.5200,13.4050,2012-09-30
+berlin,2013,BMW Berlin Marathon,Berlin,DEU,52.5200,13.4050,2013-09-29
+berlin,2014,BMW Berlin Marathon,Berlin,DEU,52.5200,13.4050,2014-09-28
+berlin,2015,BMW Berlin Marathon,Berlin,DEU,52.5200,13.4050,2015-09-27
+berlin,2016,BMW Berlin Marathon,Berlin,DEU,52.5200,13.4050,2016-09-25
+berlin,2017,BMW Berlin Marathon,Berlin,DEU,52.5200,13.4050,2017-09-24
+berlin,2018,BMW Berlin Marathon,Berlin,DEU,52.5200,13.4050,2018-09-16
+berlin,2019,BMW Berlin Marathon,Berlin,DEU,52.5200,13.4050,2019-09-29
+berlin,2021,BMW Berlin Marathon,Berlin,DEU,52.5200,13.4050,2021-09-26
+berlin,2022,BMW Berlin Marathon,Berlin,DEU,52.5200,13.4050,2022-09-25
 berlin,2023,BMW Berlin Marathon,Berlin,DEU,52.5200,13.4050,2023-09-24
-chicago,2023,Chicago Marathon,Chicago,USA,41.8781,-87.6298,2023-10-08
+berlin,2024,BMW Berlin Marathon,Berlin,DEU,52.5200,13.4050,2024-09-29
+berlin,2025,BMW Berlin Marathon,Berlin,DEU,52.5200,13.4050,2025-09-28
+chicago,2000,Chicago Marathon,Chicago,USA,41.8781,-87.6298,2000-10-22
+chicago,2001,LaSalle Bank Chicago Marathon,Chicago,USA,41.8781,-87.6298,2001-10-07
+chicago,2002,LaSalle Bank Chicago Marathon,Chicago,USA,41.8781,-87.6298,2002-10-13
+chicago,2003,LaSalle Bank Chicago Marathon,Chicago,USA,41.8781,-87.6298,2003-10-12
+chicago,2004,LaSalle Bank Chicago Marathon,Chicago,USA,41.8781,-87.6298,2004-10-10
+chicago,2005,LaSalle Bank Chicago Marathon,Chicago,USA,41.8781,-87.6298,2005-10-09
+chicago,2006,LaSalle Bank Chicago Marathon,Chicago,USA,41.8781,-87.6298,2006-10-22
+chicago,2007,LaSalle Bank Chicago Marathon,Chicago,USA,41.8781,-87.6298,2007-10-07
+chicago,2008,Bank of America Chicago Marathon,Chicago,USA,41.8781,-87.6298,2008-10-12
+chicago,2009,Bank of America Chicago Marathon,Chicago,USA,41.8781,-87.6298,2009-10-11
+chicago,2010,Bank of America Chicago Marathon,Chicago,USA,41.8781,-87.6298,2010-10-10
+chicago,2011,Bank of America Chicago Marathon,Chicago,USA,41.8781,-87.6298,2011-10-09
+chicago,2012,Bank of America Chicago Marathon,Chicago,USA,41.8781,-87.6298,2012-10-07
+chicago,2013,Bank of America Chicago Marathon,Chicago,USA,41.8781,-87.6298,2013-10-13
+chicago,2014,Bank of America Chicago Marathon,Chicago,USA,41.8781,-87.6298,2014-10-12
+chicago,2015,Bank of America Chicago Marathon,Chicago,USA,41.8781,-87.6298,2015-10-11
+chicago,2016,Bank of America Chicago Marathon,Chicago,USA,41.8781,-87.6298,2016-10-09
+chicago,2017,Bank of America Chicago Marathon,Chicago,USA,41.8781,-87.6298,2017-10-08
+chicago,2018,Bank of America Chicago Marathon,Chicago,USA,41.8781,-87.6298,2018-10-07
+chicago,2019,Bank of America Chicago Marathon,Chicago,USA,41.8781,-87.6298,2019-10-13
+chicago,2021,Bank of America Chicago Marathon,Chicago,USA,41.8781,-87.6298,2021-10-10
+chicago,2022,Bank of America Chicago Marathon,Chicago,USA,41.8781,-87.6298,2022-10-09
+chicago,2023,Bank of America Chicago Marathon,Chicago,USA,41.8781,-87.6298,2023-10-08
+chicago,2024,Bank of America Chicago Marathon,Chicago,USA,41.8781,-87.6298,2024-10-13
+chicago,2025,Bank of America Chicago Marathon,Chicago,USA,41.8781,-87.6298,2025-10-12
+london,2014,Virgin Money London Marathon,London,GBR,51.5074,-0.1278,2014-04-13
+london,2015,Virgin Money London Marathon,London,GBR,51.5074,-0.1278,2015-04-26
+london,2016,Virgin Money London Marathon,London,GBR,51.5074,-0.1278,2016-04-24
+london,2017,Virgin Money London Marathon,London,GBR,51.5074,-0.1278,2017-04-23
+london,2018,Virgin Money London Marathon,London,GBR,51.5074,-0.1278,2018-04-22
+london,2019,Virgin Money London Marathon,London,GBR,51.5074,-0.1278,2019-04-28
+london,2020,Virgin Money London Marathon,London,GBR,51.5074,-0.1278,2020-10-04
+london,2021,TCS London Marathon,London,GBR,51.5074,-0.1278,2021-10-03
+nyc,1970,New York City Marathon,New York,USA,40.7128,-74.0060,1970-09-13
+nyc,1971,New York City Marathon,New York,USA,40.7128,-74.0060,1971-10-03
+nyc,1972,New York City Marathon,New York,USA,40.7128,-74.0060,1972-10-01
+nyc,1973,New York City Marathon,New York,USA,40.7128,-74.0060,1973-10-07
+nyc,1974,New York City Marathon,New York,USA,40.7128,-74.0060,1974-09-29
+nyc,1975,New York City Marathon,New York,USA,40.7128,-74.0060,1975-09-28
+nyc,1976,New York City Marathon,New York,USA,40.7128,-74.0060,1976-10-24
+nyc,1977,New York City Marathon,New York,USA,40.7128,-74.0060,1977-10-23
+nyc,1978,New York City Marathon,New York,USA,40.7128,-74.0060,1978-10-22
+nyc,1979,New York City Marathon,New York,USA,40.7128,-74.0060,1979-10-21
+nyc,1980,New York City Marathon,New York,USA,40.7128,-74.0060,1980-10-26
+nyc,1981,New York City Marathon,New York,USA,40.7128,-74.0060,1981-10-25
+nyc,1982,New York City Marathon,New York,USA,40.7128,-74.0060,1982-10-24
+nyc,1983,New York City Marathon,New York,USA,40.7128,-74.0060,1983-10-23
+nyc,1984,New York City Marathon,New York,USA,40.7128,-74.0060,1984-10-28
+nyc,1985,New York City Marathon,New York,USA,40.7128,-74.0060,1985-11-03
+nyc,1986,New York City Marathon,New York,USA,40.7128,-74.0060,1986-11-02
+nyc,1987,New York City Marathon,New York,USA,40.7128,-74.0060,1987-11-01
+nyc,1988,New York City Marathon,New York,USA,40.7128,-74.0060,1988-11-06
+nyc,1989,New York City Marathon,New York,USA,40.7128,-74.0060,1989-11-05
+nyc,1990,New York City Marathon,New York,USA,40.7128,-74.0060,1990-11-04
+nyc,1991,New York City Marathon,New York,USA,40.7128,-74.0060,1991-11-03
+nyc,1992,New York City Marathon,New York,USA,40.7128,-74.0060,1992-11-01
+nyc,1993,New York City Marathon,New York,USA,40.7128,-74.0060,1993-11-07
+nyc,1994,New York City Marathon,New York,USA,40.7128,-74.0060,1994-11-06
+nyc,1995,New York City Marathon,New York,USA,40.7128,-74.0060,1995-11-05
+nyc,1996,New York City Marathon,New York,USA,40.7128,-74.0060,1996-11-03
+nyc,1997,New York City Marathon,New York,USA,40.7128,-74.0060,1997-11-02
+nyc,1998,New York City Marathon,New York,USA,40.7128,-74.0060,1998-11-01
+nyc,1999,New York City Marathon,New York,USA,40.7128,-74.0060,1999-11-07
+nyc,2000,New York City Marathon,New York,USA,40.7128,-74.0060,2000-11-05
+nyc,2001,New York City Marathon,New York,USA,40.7128,-74.0060,2001-11-04
+nyc,2002,New York City Marathon,New York,USA,40.7128,-74.0060,2002-11-03
+nyc,2003,New York City Marathon,New York,USA,40.7128,-74.0060,2003-11-02
+nyc,2004,New York City Marathon,New York,USA,40.7128,-74.0060,2004-11-07
+nyc,2005,ING New York City Marathon,New York,USA,40.7128,-74.0060,2005-11-06
+nyc,2006,ING New York City Marathon,New York,USA,40.7128,-74.0060,2006-11-05
+nyc,2007,ING New York City Marathon,New York,USA,40.7128,-74.0060,2007-11-04
+nyc,2008,ING New York City Marathon,New York,USA,40.7128,-74.0060,2008-11-02
+nyc,2009,ING New York City Marathon,New York,USA,40.7128,-74.0060,2009-11-01
+nyc,2010,ING New York City Marathon,New York,USA,40.7128,-74.0060,2010-11-07
+nyc,2011,ING New York City Marathon,New York,USA,40.7128,-74.0060,2011-11-06
+nyc,2013,ING New York City Marathon,New York,USA,40.7128,-74.0060,2013-11-03
+nyc,2014,TCS New York City Marathon,New York,USA,40.7128,-74.0060,2014-11-02
+nyc,2015,TCS New York City Marathon,New York,USA,40.7128,-74.0060,2015-11-01
+nyc,2016,TCS New York City Marathon,New York,USA,40.7128,-74.0060,2016-11-06
+nyc,2017,TCS New York City Marathon,New York,USA,40.7128,-74.0060,2017-11-05
+nyc,2018,TCS New York City Marathon,New York,USA,40.7128,-74.0060,2018-11-04
+nyc,2019,TCS New York City Marathon,New York,USA,40.7128,-74.0060,2019-11-03
+nyc,2021,TCS New York City Marathon,New York,USA,40.7128,-74.0060,2021-11-07
+nyc,2022,TCS New York City Marathon,New York,USA,40.7128,-74.0060,2022-11-06
 nyc,2023,TCS New York City Marathon,New York,USA,40.7128,-74.0060,2023-11-05
-london,2023,TCS London Marathon,London,GBR,51.5074,-0.1278,2023-04-23
+nyc,2024,TCS New York City Marathon,New York,USA,40.7128,-74.0060,2024-11-03
