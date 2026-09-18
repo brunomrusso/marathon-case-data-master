@@ -46,7 +46,7 @@
       "name": "country_performance",
       "displayName": "Performance por pais",
       "queryLines": [
-        "SELECT source, year, country, SUM(total_athletes) AS total_athletes, ROUND(AVG(avg_finish_time_sec) / 60, 1) AS avg_finish_time_min, CONCAT(LPAD(CAST(FLOOR(AVG(avg_finish_time_sec) / 3600) AS STRING), 2, '0'), ':', LPAD(CAST(FLOOR(PMOD(AVG(avg_finish_time_sec), 3600) / 60) AS STRING), 2, '0')) AS avg_finish_time_hm FROM (SELECT CASE source WHEN 'berlin' THEN 'Berlin' WHEN 'chicago' THEN 'Chicago' WHEN 'london' THEN 'London' WHEN 'nyc' THEN 'New York' ELSE source END AS source, year, country, total_athletes, avg_finish_time_sec FROM top_countries WHERE country IS NOT NULL) GROUP BY source, year, country ORDER BY total_athletes DESC"
+        "SELECT country, SUM(total_athletes) AS total_athletes, CONCAT(  LPAD(CAST(FLOOR(SUM(total_athletes * avg_finish_time_sec) / SUM(total_athletes) / 3600) AS STRING), 2, '0'), ':',   LPAD(CAST(FLOOR(PMOD(SUM(total_athletes * avg_finish_time_sec) / SUM(total_athletes), 3600) / 60) AS STRING), 2, '0')) AS avg_finish_time_hm FROM top_countries WHERE country IS NOT NULL GROUP BY country ORDER BY total_athletes DESC"
       ]
     },
     {
@@ -1069,18 +1069,18 @@
                   "fields": [
                     {
                       "name": "country",
-                      "expression": "`country`"
+                      "expression": "country"
                     },
                     {
                       "name": "total_athletes",
-                      "expression": "SUM(`total_athletes`)"
+                      "expression": "total_athletes"
                     },
                     {
-                      "name": "avg_finish_time_min",
-                      "expression": "ROUND(AVG(`avg_finish_time_min`), 1)"
+                      "name": "avg_finish_time_hm",
+                      "expression": "avg_finish_time_hm"
                     }
                   ],
-                  "disaggregated": false
+                  "disaggregated": true
                 }
               }
             ],
@@ -1098,8 +1098,8 @@
                     "displayName": "Atletas"
                   },
                   {
-                    "fieldName": "avg_finish_time_min",
-                    "displayName": "Tempo medio (min)"
+                    "fieldName": "avg_finish_time_hm",
+                    "displayName": "Tempo medio"
                   }
                 ]
               },
