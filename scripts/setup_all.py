@@ -330,6 +330,13 @@ def step_deploy_terraform(state):
     _purge_soft_deleted_keyvault(TERRAFORM_DIR)
 
     print_info("terraform apply (pode levar 5-10 minutos)")
+    # Erros do Key Vault: provider chama GetCertificateContacts no data
+    # plane (kv-*.vault.azure.net) que demora 3-5 min para propagar DNS
+    # após criação do vault. Retry com espera longa resolve sem mudar infra.
+    KEYVAULT_DNS_ERRORS = (
+        "GetCertificateContacts",
+        "keyvault.BaseClient",
+    )
     TRANSIENT_TF_ERRORS = (
         "ResourceGroupNotFound",
         "context deadline exceeded",
@@ -340,7 +347,8 @@ def step_deploy_terraform(state):
         "ServiceUnavailable",
         "Throttling",
     )
-    for attempt in range(1, 5):
+    MAX_ATTEMPTS = 6
+    for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
             output = run_command(["terraform", "apply", "-auto-approve"], capture=True, check=True, cwd=str(TERRAFORM_DIR))
             if output:
@@ -348,10 +356,18 @@ def step_deploy_terraform(state):
             break
         except RuntimeError as exc:
             err = str(exc)
+            is_keyvault = any(e in err for e in KEYVAULT_DNS_ERRORS)
             is_transient = any(e in err for e in TRANSIENT_TF_ERRORS)
-            if is_transient and attempt < 4:
-                wait = 30 * attempt  # 30s, 60s, 90s
-                print_info(f"Erro transiente no Terraform (tentativa {attempt}/4): retrying em {wait}s...")
+            if is_keyvault and attempt < MAX_ATTEMPTS:
+                # Key Vault data plane pode levar 3-5 min para propagar.
+                # Vault foi criado mas o provider nao conseguiu fazer o Read.
+                # Aguarda propagacao; proxima tentativa re-usa o vault existente.
+                wait = 180  # 3 minutos
+                print_info(f"Key Vault data plane propagando (tentativa {attempt}/{MAX_ATTEMPTS}): aguardando {wait}s...")
+                time.sleep(wait)
+            elif is_transient and attempt < MAX_ATTEMPTS:
+                wait = min(30 * attempt, 90)  # 30s, 60s, 90s max
+                print_info(f"Erro transiente no Terraform (tentativa {attempt}/{MAX_ATTEMPTS}): retrying em {wait}s...")
                 time.sleep(wait)
             else:
                 raise
