@@ -49,9 +49,15 @@ raw_dir = raw_dir.rstrip("/")
 
 try:
     dbutils.fs.mkdirs(raw_dir)
-    files = [f for f in dbutils.fs.ls(raw_dir) if f.path.endswith(".csv")]
+    all_entries = dbutils.fs.ls(raw_dir)
+    print(f"Entradas encontradas em {raw_dir}: {len(all_entries)}")
+    for entry in all_entries[:10]:
+        print(f"  {entry.path}")
+    files = [f for f in all_entries if f.path.endswith(".csv")]
 except Exception as e:
-    print(f"Aviso: nao foi possivel listar {raw_dir}: {e}")
+    import traceback
+    print(f"ERRO ao listar {raw_dir}: {type(e).__name__}: {e}")
+    traceback.print_exc()
     files = []
 
 # Gera run_id/batch_id para rastrear o fluxo end-to-end

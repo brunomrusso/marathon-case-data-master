@@ -4,7 +4,7 @@
       "name": "kpi_global",
       "displayName": "KPIs globais",
       "queryLines": [
-        "SELECT CAST(SUM(total_athletes) AS BIGINT) AS total_finishers, COUNT(DISTINCT year) AS total_editions, COUNT(DISTINCT source) AS total_marathons, ROUND(AVG(avg_finish_time_sec) / 60.0, 0) AS avg_finish_time_min FROM kpi_summary WHERE avg_finish_time_sec IS NOT NULL"
+        "SELECT CAST(SUM(total_athletes) AS BIGINT) AS total_finishers, COUNT(DISTINCT year) AS total_editions, COUNT(DISTINCT source) AS total_marathons, CONCAT(  CAST(FLOOR(AVG(avg_finish_time_sec) / 3600) AS INT), 'h ',   LPAD(CAST(FLOOR(MOD(AVG(avg_finish_time_sec), 3600) / 60) AS INT), 2, '0'), 'm') AS avg_finish_time_hm FROM kpi_summary WHERE avg_finish_time_sec IS NOT NULL"
       ]
     },
     {
@@ -553,8 +553,8 @@
                   "datasetName": "kpi_global",
                   "fields": [
                     {
-                      "name": "avg_finish_time_min",
-                      "expression": "avg_finish_time_min"
+                      "name": "avg_finish_time_hm",
+                      "expression": "avg_finish_time_hm"
                     }
                   ],
                   "disaggregated": true
@@ -562,17 +562,29 @@
               }
             ],
             "spec": {
-              "version": 2,
-              "widgetType": "counter",
+              "version": 3,
+              "widgetType": "table",
               "encodings": {
-                "value": {
-                  "fieldName": "avg_finish_time_min",
-                  "displayName": "min"
-                }
+                "columns": [
+                  {
+                    "booleanTrueLabel": "yes",
+                    "booleanFalseLabel": "no",
+                    "visible": true,
+                    "fieldName": "avg_finish_time_hm",
+                    "title": "",
+                    "type": "string",
+                    "displayAs": "string",
+                    "alignContent": "center"
+                  }
+                ]
               },
+              "invisibleColumns": [],
+              "condensed": true,
+              "withRowNumber": false,
               "frame": {
-                "title": "Tempo medio (min)",
-                "showTitle": true
+                "title": "Tempo medio",
+                "showTitle": true,
+                "description": ""
               }
             }
           },
