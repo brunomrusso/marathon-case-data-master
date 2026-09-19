@@ -2,7 +2,6 @@ locals {
   resource_group_name           = "rg-${var.project_name}-${var.environment}"
   storage_name                  = coalesce(var.storage_account_name_override, "st${var.project_name}${var.environment}")
   databricks_name               = "dbw-${var.project_name}-${var.environment}"
-  keyvault_name                 = "kv-${var.project_name}-${var.environment}"
   access_connector              = "ac-${var.project_name}-${var.environment}-v2"
   databricks_managed_rg         = "databricks-rg-${var.project_name}-${var.environment}"
   storage_blob_data_contributor = "ba92f5b4-2d11-453d-a403-e96b0029c9fe"
@@ -52,18 +51,6 @@ resource "azurerm_databricks_workspace" "this" {
   location                    = var.location
   sku                         = "premium"
   managed_resource_group_name = local.databricks_managed_rg
-
-  tags = var.tags
-}
-
-resource "azurerm_key_vault" "this" {
-  name                       = local.keyvault_name
-  location                   = var.location
-  resource_group_name        = local.resource_group_name
-  tenant_id                  = data.azurerm_client_config.current.tenant_id
-  sku_name                   = "standard"
-  soft_delete_retention_days = 7
-  purge_protection_enabled   = false
 
   tags = var.tags
 }

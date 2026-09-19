@@ -6,7 +6,6 @@ azure:
   storage_account: stmarathoncase
   container: marathon-data
   databricks_workspace: dbw-marathon-case
-  key_vault: kv-marathon-case
 paths:
   raw: abfss://marathon-data@stmarathoncase.dfs.core.windows.net/raw
   bronze: abfss://marathon-data@stmarathoncase.dfs.core.windows.net/bronze

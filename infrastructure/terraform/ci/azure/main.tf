@@ -50,10 +50,6 @@ output "databricks_workspace_resource_id" {
   value = module.platform.databricks_workspace_resource_id
 }
 
-output "key_vault_name" {
-  value = module.platform.key_vault_name
-}
-
 output "access_connector_id" {
   value = module.platform.access_connector_id
 }

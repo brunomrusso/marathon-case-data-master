@@ -132,7 +132,7 @@ Fluxo do script:
 
 1. Checa prerequisitos (Python, Azure CLI, Terraform)
 2. Garante login no Azure
-3. Cria a infraestrutura Azure via Terraform (resource group, storage, workspace, access connector, key vault)
+3. Cria a infraestrutura Azure via Terraform (resource group, storage, workspace, access connector)
 4. Atualiza `config/config.yaml` com os recursos criados
 5. Autentica no Databricks via Microsoft Entra ID e verifica o Unity Catalog
 6. Cria storage credential, external location e catalog no Unity Catalog

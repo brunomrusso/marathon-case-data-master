@@ -8,7 +8,6 @@ param tags object = {}
 var storageAccountName = 'st${projectName}${environment}'
 var containerName = 'marathon-data'
 var databricksName = 'dbw-${projectName}-${environment}'
-var keyVaultName = 'kv-${projectName}-${environment}'
 var accessConnectorName = 'ac-${projectName}-${environment}-v2'
 var databricksManagedRg = 'databricks-rg-${projectName}-${environment}'
 var storageBlobDataContributor = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
@@ -41,17 +40,6 @@ resource databricks 'Microsoft.Databricks/workspaces@2023-02-01' = {
   tags: tags
 }
 
-resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' = {
-  name: keyVaultName
-  location: location
-  properties: {
-    tenantId: subscription().tenantId
-    sku: { name: 'standard', family: 'A' }
-    enableRbacAuthorization: true
-  }
-  tags: tags
-}
-
 resource accessConnector 'Microsoft.Databricks/accessConnectors@2022-10-01-preview' = {
   name: accessConnectorName
   location: location
@@ -75,5 +63,4 @@ resource storageRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
 output storageAccountName string = storage.name
 output databricksWorkspaceName string = databricks.name
 output databricksWorkspaceUrl string = databricks.properties.workspaceUrl
-output keyVaultName string = keyVault.name
 output accessConnectorId string = accessConnector.id

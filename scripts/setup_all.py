@@ -25,12 +25,9 @@ import base64
 import json
 import os
 import shutil
-import socket
-import ssl
 import subprocess
 import sys
 import time
-import urllib.request
 import webbrowser
 from pathlib import Path
 
@@ -282,78 +279,6 @@ def step_azure_login(state):
     mark_completed(state, "azure_login")
 
 
-def _keyvault_name_from_dir(terraform_dir: Path) -> str:
-    """Deriva o nome do Key Vault a partir do diretório Terraform."""
-    tf_str = str(terraform_dir).replace("\\", "/")
-    environment = "prod" if "/ci/" in tf_str else "case"
-    return f"kv-marathon-{environment}"
-
-
-def _purge_soft_deleted_keyvault(terraform_dir: Path):
-    """Purga Key Vault em soft-delete antes do terraform apply."""
-    vault_name = _keyvault_name_from_dir(terraform_dir)
-    try:
-        print_info(f"Verificando Key Vault soft-deleted '{vault_name}'...")
-        raw = run_command(
-            ["az", "keyvault", "list-deleted",
-             "--query", f"[?name=='{vault_name}']",
-             "-o", "json"],
-            capture=True, check=False,
-        )
-        deleted = json.loads(raw or "[]")
-        if not deleted:
-            print_info(f"Nenhum Key Vault soft-deleted encontrado para '{vault_name}'.")
-            return
-        location = deleted[0].get("properties", {}).get("location", "eastus")
-        print_info(f"Purgando Key Vault soft-deleted '{vault_name}' (regiao: {location})...")
-        run_command(
-            ["az", "keyvault", "purge", "--name", vault_name, "--location", location],
-            capture=False, check=True,
-        )
-        print_ok(f"Key Vault '{vault_name}' purgado.")
-    except Exception as exc:
-        print_warn(f"Nao foi possivel purgar Key Vault soft-deleted (continuando): {exc}")
-
-
-def _wait_for_keyvault_endpoint(vault_name: str, max_wait_seconds: int = 600) -> bool:
-    """Aguarda o data plane do Key Vault responder antes de continuar.
-
-    O azurerm provider chama GetCertificateContacts no endpoint
-    {vault}.vault.azure.net após criar o vault. Em runners de CI, esse
-    endpoint pode demorar vários minutos para inicializar após uma criação
-    do zero. Em vez de esperar um tempo fixo, fazemos polling ativo: assim
-    que o endpoint retornar QUALQUER resposta HTTP (mesmo 401/403),
-    sabemos que está pronto e o provider conseguirá completar o Read.
-    """
-    url = f"https://{vault_name}.vault.azure.net/"
-    deadline = time.time() + max_wait_seconds
-    ctx = ssl.create_default_context()
-    elapsed = 0
-    print_info(f"Aguardando data plane do Key Vault '{vault_name}' inicializar (max {max_wait_seconds}s)...")
-    while time.time() < deadline:
-        try:
-            req = urllib.request.Request(
-                url,
-                headers={"Authorization": "Bearer dummy"},
-            )
-            urllib.request.urlopen(req, timeout=10, context=ctx)
-            print_ok(f"Key Vault endpoint respondeu ({elapsed}s).")
-            return True
-        except urllib.error.HTTPError as e:
-            # 400/401/403 = endpoint está ativo (erro de auth é esperado)
-            if e.code in (400, 401, 403):
-                print_ok(f"Key Vault endpoint ativo (HTTP {e.code}, {elapsed}s).")
-                return True
-        except Exception:
-            pass
-        time.sleep(15)
-        elapsed = int(time.time() - (deadline - max_wait_seconds))
-        if elapsed % 60 == 0 and elapsed > 0:
-            print_info(f"  Key Vault ainda inicializando... ({elapsed}s)")
-    print_warn(f"Key Vault endpoint nao respondeu em {max_wait_seconds}s.")
-    return False
-
-
 def step_deploy_terraform(state):
     print_step(STEPS.index("deploy_terraform") + 1, "Provisionando infraestrutura Azure via Terraform")
 
@@ -363,13 +288,7 @@ def step_deploy_terraform(state):
     print_info("terraform init")
     run_command(terraform_init_command("terraform", "platform.tfstate"), capture=False, check=True, cwd=str(TERRAFORM_DIR))
 
-    _purge_soft_deleted_keyvault(TERRAFORM_DIR)
-
     print_info("terraform apply (pode levar 5-10 minutos)")
-    KEYVAULT_ERRORS = (
-        "GetCertificateContacts",
-        "keyvault.BaseClient",
-    )
     TRANSIENT_TF_ERRORS = (
         "ResourceGroupNotFound",
         "context deadline exceeded",
@@ -380,7 +299,6 @@ def step_deploy_terraform(state):
         "ServiceUnavailable",
         "Throttling",
     )
-    vault_name = _keyvault_name_from_dir(TERRAFORM_DIR)
     MAX_ATTEMPTS = 4
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
@@ -390,14 +308,8 @@ def step_deploy_terraform(state):
             break
         except RuntimeError as exc:
             err = str(exc)
-            is_keyvault = any(e in err for e in KEYVAULT_ERRORS)
             is_transient = any(e in err for e in TRANSIENT_TF_ERRORS)
-            if is_keyvault and attempt < MAX_ATTEMPTS:
-                # Vault criado, mas data plane ainda inicializando.
-                # Polling ativo: aguarda até o endpoint responder (max 10min).
-                print_info(f"Key Vault data plane nao disponivel (tentativa {attempt}/{MAX_ATTEMPTS}).")
-                _wait_for_keyvault_endpoint(vault_name, max_wait_seconds=600)
-            elif is_transient and attempt < MAX_ATTEMPTS:
+            if is_transient and attempt < MAX_ATTEMPTS:
                 wait = min(30 * attempt, 90)
                 print_info(f"Erro transiente no Terraform (tentativa {attempt}/{MAX_ATTEMPTS}): retrying em {wait}s...")
                 time.sleep(wait)
@@ -427,7 +339,6 @@ def step_update_config(state):
     storage = outputs.get("storage_account_name")
     container = outputs.get("container_name")
     workspace = outputs.get("databricks_workspace_name")
-    kv = outputs.get("key_vault_name")
 
     config = yaml.safe_load(CONFIG_FILE.read_text(encoding="utf-8")) if CONFIG_FILE.exists() else {}
     config.setdefault("azure", {})
@@ -435,7 +346,7 @@ def step_update_config(state):
     config["azure"]["storage_account"] = storage
     config["azure"]["container"] = container
     config["azure"]["databricks_workspace"] = workspace
-    config["azure"]["key_vault"] = kv
+    config["azure"].pop("key_vault", None)
 
     config.setdefault("paths", {})
     config["paths"]["raw"] = f"abfss://{container}@{storage}.dfs.core.windows.net/raw"

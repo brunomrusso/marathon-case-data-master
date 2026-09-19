@@ -26,10 +26,6 @@ output "databricks_workspace_resource_id" {
   value = azurerm_databricks_workspace.this.id
 }
 
-output "key_vault_name" {
-  value = azurerm_key_vault.this.name
-}
-
 output "access_connector_id" {
   value = azurerm_databricks_access_connector.this.id
 }

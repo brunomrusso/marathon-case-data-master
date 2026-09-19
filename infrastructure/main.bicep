@@ -29,5 +29,4 @@ output resourceGroupName string = rg.name
 output storageAccountName string = resources.outputs.storageAccountName
 output databricksWorkspaceName string = resources.outputs.databricksWorkspaceName
 output databricksWorkspaceUrl string = resources.outputs.databricksWorkspaceUrl
-output keyVaultName string = resources.outputs.keyVaultName
 output accessConnectorId string = resources.outputs.accessConnectorId
