@@ -9,14 +9,21 @@ Solução de Engenharia de Dados na Azure para processar e visualizar dados das 
 ### Raw
 - Landing zone para os arquivos CSV brutos e para os JSONs brutos da API Open-Meteo.
 - Armazenada em `abfss://marathon-data@<storage>.dfs.core.windows.net/raw/`.
+- Cada fonte possui sua própria subpasta para separação de schemas:
+  - `raw/berlin/`
+  - `raw/chicago/`
+  - `raw/london/`
+  - `raw/nyc/`
+  - `raw/metadata/` (CSV de metadados das provas, consumido pelo weather)
 - Os arquivos `raw/weather_api/{source}/{year}/{race_date}.json` representam o landing de dados externos via API, mantendo o mesmo padrão raw → bronze.
-- A ingestão CSV é acionada por **File Arrival Trigger** sempre que novos arquivos chegam.
+- A ingestão CSV é acionada por **File Arrival Trigger** sempre que novos arquivos chegam em qualquer subpasta.
 
 ### Bronze
-- Recebe os arquivos CSV brutos de cada origem.
+- Recebe os arquivos CSV brutos de cada origem via **Databricks Auto Loader** (`cloudFiles`).
+- Cada fonte tem seu próprio schema inferido, checkpoint e localização de schema (`bronze/_checkpoints/<source>`, `bronze/_schemas/<source>`).
 - Mantém os dados com o mínimo de transformação.
 - Aplica registro de arquivos processados (`bronze.file_metadata`).
-- Carga incremental via `MERGE` no Delta Lake, usando hash de linha para idempotência.
+- Carga incremental idempotente: Auto Loader processa só arquivos novos; dentro de cada micro-batch aplica `MERGE` no Delta Lake por `source + year + row_hash`.
 - Tabelas **externas** armazenadas em `abfss://.../bronze/<source>`.
 
 ### Silver
@@ -50,16 +57,16 @@ Gera agregações e métricas para o dashboard. Tabelas **externas** armazenadas
 
 ## Fluxo de Execução
 
-1. Arquivos CSV são enviados para `raw/` via `scripts/upload_raw_data.py` (cria o container se não existir).
-2. O **File Arrival Trigger** detecta a chegada e dispara o Databricks Workflow.
+1. Arquivos CSV são enviados para `raw/<fonte>/` via `scripts/upload_raw_data.py` (classifica por nome e cria o container se não existir).
+2. O **File Arrival Trigger** detecta a chegada em qualquer subpasta de `raw/` e dispara o Databricks Workflow.
 3. `00_bronze_orchestrator`:
    - Gera `run_id` (UUID) e `batch_id` (timestamp), propagados via `dbutils.jobs.taskValues`.
-   - Lista os CSVs em `raw/`, **ignora** arquivos não reconhecidos como fontes de resultados (ex: `marathon_metadata.csv`) sem abortar.
-   - Agrupa por fonte e chama `01_bronze_ingestion` uma vez por origem.
-4. `01_bronze_ingestion` lê os CSVs, sanitiza colunas, deduplica por hash de linha e carrega na Bronze via `MERGE`. Registra métricas em `monitoring.data_quality_log` (modo append).
+   - Para cada subpasta de fonte encontrada (`berlin/`, `chicago/`, `london/`, `nyc/`), inicia um stream do Auto Loader (`readStream.format("cloudFiles")`).
+   - Em cada micro-batch, sanitiza colunas, extrai ano, adiciona `row_hash` e aplica `MERGE` idempotente na tabela Bronze.
+   - Registra métricas em `monitoring.data_quality_log` (modo append).
 5. `02_silver_etl` lê as tabelas Bronze, normaliza schemas, aplica mascaramento e grava `silver.marathons`. Registra métricas.
 6. `04_weather_enrichment`:
-   - Lê `raw/marathon_metadata.csv` (se existir) para datas exatas; caso contrário usa heurística.
+   - Lê `raw/metadata/marathon_metadata.csv` (se existir) para datas exatas; caso contrário usa heurística.
    - Grava/atualiza `bronze.marathon_metadata` via `MERGE`.
    - Para cada `(source, year)` sem registro, chama Open-Meteo, persiste JSON bruto em `raw/weather_api/`, parseia e grava em `bronze.weather_raw` via `MERGE`.
    - Cria `silver.marathons_with_weather` com join por `source + year`.

@@ -19,7 +19,7 @@ Desenvolver uma solução completa de Engenharia de Dados para ingerir, processa
 
 ### Arquitetura Medalhão
 - **Raw:** landing zone para CSV de resultados e JSONs brutos da API Open-Meteo (`raw/weather_api/`). Nenhum dado é processado nesta camada.
-- **Bronze:** ingestão dos CSVs com registro de arquivos processados, carga incremental via `MERGE` e detecção de schema drift. Tabelas **externas** no ADLS (`bronze/<source>`). Inclui `bronze.marathon_metadata` e `bronze.weather_raw`.
+- **Bronze:** ingestão dos CSVs via **Databricks Auto Loader** (`cloudFiles`), uma stream por fonte, com checkpoint e schema inferido por subpasta. Carga incremental idempotente via `MERGE` no Delta Lake. Tabelas **externas** no ADLS (`bronze/<source>`). Inclui `bronze.marathon_metadata` e `bronze.weather_raw`.
 - **Silver:** limpeza, padronização de schema, integração das fontes, mascaramento/anonimização e validação. Inclui `silver.marathons` e `silver.marathons_with_weather` (enriquecida com clima). Tabelas **externas** no ADLS.
 - **Gold:** agregações e métricas para alimentar o dashboard. Tabelas **externas** no ADLS (`gold/<tabela>`). Ver seção de tabelas Gold.
 - **Monitoring:** tabela `monitoring.data_quality_log` com métricas de qualidade por camada, rastreabilidade end-to-end via `run_id`/`batch_id`, schema drift e tempo de execução.
@@ -28,7 +28,7 @@ Todas as camadas são catalogadas no **Unity Catalog** (`marathon.bronze.*`, `ma
 
 ### Fluxo de Dados
 ```
-CSV local ──► ADLS raw/ ──► File Arrival Trigger ──► 00_bronze_orchestrator (gera run_id/batch_id)
+CSV local ──► ADLS raw/<fonte>/ ──► File Arrival Trigger ──► 00_bronze_orchestrator (Auto Loader, gera run_id/batch_id)
                                                               │
                                               ┌───────────────┘
                                               ▼
@@ -89,13 +89,13 @@ pip install -r requirements.txt
 
 1. Faça o download dos arquivos CSV de cada fonte.
 2. Coloque os arquivos na pasta `data/raw/` do repositório.
-3. Nomes reconhecidos pelo orquestrador:
-   - `data/raw/Chicago_Marathon_2000-2025.csv`
-   - `data/raw/London_2014_mass_results.csv`
-   - `data/raw/London_2014_elite_results.csv`
-   - ... (demais anos de 2014 a 2022)
-   - `data/raw/NYC Marathon Results.csv`
-   - `data/raw/Berlin_Marathon_1999-2025_original.csv`
+3. O `upload_raw_data.py` classifica por nome e envia para subpastas no ADLS:
+   - `data/raw/Chicago_Marathon_2000-2025.csv` → `raw/chicago/`
+   - `data/raw/London_2014_mass_results.csv` → `raw/london/`
+   - `data/raw/London_2014_elite_results.csv` → `raw/london/`
+   - `data/raw/NYC Marathon Results.csv` → `raw/nyc/`
+   - `data/raw/Berlin_Marathon_1999-2025_original.csv` → `raw/berlin/`
+   - `data/raw/marathon_metadata.csv` → `raw/metadata/`
 
 ### 4. Inspecionar os dados localmente
 
@@ -138,7 +138,7 @@ Fluxo do script:
 6. Cria storage credential, external location e catalog no Unity Catalog
 7. Salva secrets no Databricks
 8. Registra EventGrid provider e atribui roles ao Access Connector
-9. Sobe os CSVs para `raw/`
+9. Sobe os CSVs para `raw/<fonte>/`
 10. Implanta os notebooks locais em `/Workspace/Shared/marathon-case/notebooks`
 11. Valida individualmente os notebooks implantados
 12. Cria o workflow com File Arrival Trigger
@@ -192,15 +192,15 @@ Se preferir executar cada passo separadamente, os scripts individuais continuam 
 > **O Bicep (`infrastructure/main.bicep` e `resources.bicep`) ainda existe como alternativa**, mas nao cria automaticamente o metastore do Unity Catalog. Use o Terraform para provisionamento end-to-end.
 
 O workflow executa em sequência:
-1. **00_bronze_orchestrator** — lê `raw/` do ADLS, gera `run_id`/`batch_id` e ingere os CSVs por fonte na Bronze (uma chamada por fonte; London lido de uma só vez via glob).
-2. **01_bronze_ingestion** — executado internamente pelo orquestrador; lê, limpa, deduplica e grava cada tabela Bronze. Loga métricas em `monitoring.data_quality_log`.
+1. **00_bronze_orchestrator** — para cada subpasta de fonte em `raw/`, inicia um stream do Auto Loader (`cloudFiles`) e aplica MERGE idempotente na Bronze. Gera `run_id`/`batch_id`. Loga métricas em `monitoring.data_quality_log`.
+2. **01_bronze_ingestion** — notebook legacy de ingestão batch (não mais invocado pelo workflow; mantido como referência).
 3. **02_silver_etl** — gera a tabela `silver.marathons` e loga qualidade (registros inválidos, % nulos, schema drift).
 4. **04_weather_enrichment** — enriquece a Silver com dados climáticos do dia da prova (temperatura, precipitação, vento) via API pública Open-Meteo. Salva o JSON bruto da API em `raw/weather_api/` (padrão raw landing), gera `bronze.marathon_metadata`, `bronze.weather_raw` e `silver.marathons_with_weather`. Também loga API failures e cache.
 5. **03_gold_aggregations** — gera as tabelas `gold.*` para o dashboard, incluindo `gold.weather_impact`, e loga agregações e schema drift.
 
 > **Rastreamento end-to-end:** `run_id` e `batch_id` são gerados no `00_bronze_orchestrator` e propagados via `dbutils.jobs.taskValues` para Silver, Weather e Gold. A tabela `monitoring.data_quality_log` permite rastrear cada execução por camada, incluindo `row_count_in`, `row_count_out`, `rejected_records`, `% nulos`, `schema_drift_flag` e `execution_time_sec`.
 >
-> **Sobre as datas das provas:** O notebook `04_weather_enrichment` gera `bronze.marathon_metadata` estimando a data de cada prova com base em padrões históricos (ex: último domingo de setembro para Berlim). Se quiser datas exatas, crie um arquivo `data/raw/marathon_metadata.csv` com as colunas `source,year,marathon_name,city,country,latitude,longitude,race_date` e suba para o ADLS raw/. O notebook faz MERGE/upsert nessa tabela e usa o CSV automaticamente quando ele existe. O exemplo está em `notebooks/marathon_metadata.csv.example`.
+> **Sobre as datas das provas:** O notebook `04_weather_enrichment` gera `bronze.marathon_metadata` estimando a data de cada prova com base em padrões históricos (ex: último domingo de setembro para Berlim). Se quiser datas exatas, crie um arquivo `data/raw/marathon_metadata.csv` com as colunas `source,year,marathon_name,city,country,latitude,longitude,race_date`; o `upload_raw_data.py` o enviará para `raw/metadata/marathon_metadata.csv`. O notebook faz MERGE/upsert nessa tabela e usa o CSV automaticamente quando ele existe. O exemplo está em `notebooks/marathon_metadata.csv.example`.
 
 ### 12. Tabelas Gold — Finalidade
 

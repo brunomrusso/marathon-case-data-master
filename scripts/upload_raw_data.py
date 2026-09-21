@@ -47,13 +47,31 @@ def main():
     container_client = blob_service_client.get_container_client(container)
     wait_for_storage_access(container_client)
 
+    def classify_folder(file_name):
+        lower = file_name.lower()
+        if "berlin" in lower:
+            return "berlin"
+        if "chicago" in lower:
+            return "chicago"
+        if "london" in lower:
+            return "london"
+        if "nyc" in lower or "new_york" in lower or "new york" in lower:
+            return "nyc"
+        if "marathon_metadata" in lower:
+            return "metadata"
+        return None
+
     csv_files = sorted(f for f in local_dir.iterdir() if f.is_file() and f.suffix.lower() == ".csv")
     if not csv_files:
         print(f"Nenhum CSV encontrado em {local_dir}")
         return
 
     for f in csv_files:
-        blob_name = f"raw/{f.name}"
+        folder = classify_folder(f.name)
+        if folder is None:
+            print(f"Ignorado (fonte nao reconhecida): {f.name}")
+            continue
+        blob_name = f"raw/{folder}/{f.name}"
         blob_client = container_client.get_blob_client(blob_name)
         with open(f, "rb") as data:
             blob_client.upload_blob(data, overwrite=True)

@@ -203,8 +203,8 @@ def estimate_race_date(source, year):
 silver_df = spark.table("silver.marathons")
 years_in_data = silver_df.select("source", "year").distinct().toPandas()
 
-# Tenta carregar metadata exata de CSV em raw/marathon_metadata.csv; se não existir, usa heurística
-metadata_csv_path = f"abfss://{container}@{storage}.dfs.core.windows.net/raw/marathon_metadata.csv"
+# Tenta carregar metadata exata de CSV em raw/metadata/marathon_metadata.csv; se não existir, usa heurística
+metadata_csv_path = f"abfss://{container}@{storage}.dfs.core.windows.net/raw/metadata/marathon_metadata.csv"
 metadata_df = None
 
 try:
@@ -216,7 +216,7 @@ try:
         .filter(col("source").isin([m["source"] for m in MARATHON_METADATA])))
     if candidate_df.count() > 0:
         metadata_df = candidate_df
-        print("Metadata carregada do CSV em raw/marathon_metadata.csv")
+        print("Metadata carregada do CSV em raw/metadata/marathon_metadata.csv")
         metadata_df.show()
     else:
         print("CSV de metadata vazio; usando heurística.")
