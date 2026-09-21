@@ -17,8 +17,10 @@ new_query = (
     "CONCAT("
     "  LPAD(CAST(FLOOR(SUM(total_athletes * avg_finish_time_sec) / SUM(total_athletes) / 3600) AS STRING), 2, '0'), ':', "
     "  LPAD(CAST(FLOOR(PMOD(SUM(total_athletes * avg_finish_time_sec) / SUM(total_athletes), 3600) / 60) AS STRING), 2, '0')"
-    ") AS avg_finish_time_hm "
-    "FROM top_countries WHERE country IS NOT NULL GROUP BY country ORDER BY total_athletes DESC"
+    ") AS avg_finish_time_hm, "
+    "CAST(SUM(total_athletes * avg_finish_time_sec) / SUM(total_athletes) / 60 AS DECIMAL(6,1)) AS avg_finish_time_min "
+    "FROM top_countries WHERE country IS NOT NULL GROUP BY country HAVING SUM(total_athletes) >= 1000 "
+    "ORDER BY avg_finish_time_min ASC"
 )
 
 for ds in d["datasets"]:
