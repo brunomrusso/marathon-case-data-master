@@ -164,70 +164,92 @@ def sanitize(name):
     return name if name else "_col"
 
 
-def process_batch(source, config, batch_df, batch_id):
-    """Processa um micro-batch do Auto Loader: sanitiza, adiciona metadata,
-    extrai ano e faz MERGE idempotente na tabela Bronze.
+class BronzeBatchProcessor:
+    """Callable serializavel para foreachBatch do Auto Loader.
+
+    Evita problemas de closure com funcoes/lambdas capturando variaveis de
+    loop; os parametros necessarios ficam como atributos da instancia.
     """
-    if batch_df.isEmpty():
-        print(f"  [{source}] batch {batch_id} vazio")
-        return
 
-    new_cols = [sanitize(c) for c in batch_df.columns]
-    df = batch_df.toDF(*new_cols)
+    def __init__(self, source, config, storage, container):
+        self.source = source
+        self.config = config
+        self.storage = storage
+        self.container = container
 
-    # Extrai o ano: prefere coluna 'year' do CSV; senão tenta extrair do nome do arquivo
-    year_col = next((c for c in df.columns if c.lower() == "year"), None)
-    if year_col is None:
-        df = df.withColumn("year", regexp_extract(input_file_name(), r"_(\d{4})", 1).cast("int"))
-    else:
-        if year_col != "year":
-            df = df.withColumnRenamed(year_col, "year")
-        df = df.withColumn("year", col("year").cast("int"))
-
-    # Colunas que compõem o hash (exclui metadata que adicionaremos)
-    hash_cols = [c for c in df.columns if c not in ("source", "ingestion_date", "row_hash", "file_name")]
-
-    df = (df
-          .withColumn("source", lit(source))
-          .withColumn("ingestion_date", current_timestamp())
-          .withColumn("row_hash", sha2(concat_ws("||", *hash_cols), 256))
-          .withColumn("file_name", input_file_name()))
-
-    bronze_table = f"bronze.{source}"
-    bronze_path = f"abfss://{container}@{storage}.dfs.core.windows.net/bronze/{source}"
-
-    if not spark.catalog.tableExists(bronze_table):
-        try:
-            dbutils.fs.rm(bronze_path, recurse=True)
-        except Exception:
-            pass
-        (df.write
-         .format("delta")
-         .mode("overwrite")
-         .partitionBy("year")
-         .option("path", bronze_path)
-         .saveAsTable(bronze_table))
-    else:
+    def __call__(self, batch_df, batch_id):
+        import traceback
         from delta.tables import DeltaTable
-        delta_table = DeltaTable.forName(spark, bronze_table)
-        (delta_table.alias("t")
-         .merge(df.alias("s"), "t.source = s.source AND t.year = s.year AND t.row_hash = s.row_hash")
-         .whenMatchedUpdateAll()
-         .whenNotMatchedInsertAll()
-         .execute())
 
-    # Metadados de arquivo processado
-    file_meta_df = (df.groupBy("year", "file_name")
-                     .count()
-                     .withColumn("source", lit(source))
-                     .withColumn("ingestion_date", current_timestamp())
-                     .withColumn("year", col("year").cast("int"))
-                     .withColumn("rows", col("count").cast("long"))
-                     .select("source", "year", "file_name", "rows", "ingestion_date"))
-    if not spark.catalog.tableExists("bronze.file_metadata"):
-        file_meta_df.write.format("delta").mode("overwrite").saveAsTable("bronze.file_metadata")
-    else:
-        file_meta_df.write.format("delta").mode("append").saveAsTable("bronze.file_metadata")
+        try:
+            if batch_df.isEmpty():
+                print(f"  [{self.source}] batch {batch_id} vazio")
+                return
+
+            new_cols = [sanitize(c) for c in batch_df.columns]
+            df = batch_df.toDF(*new_cols)
+
+            # Extrai o ano: prefere coluna 'year' do CSV; senao extrai do path
+            year_col = next((c for c in df.columns if c.lower() == "year"), None)
+            if year_col is None:
+                df = df.withColumn("year", regexp_extract(input_file_name(), r"(\d{4})", 1).cast("int"))
+            else:
+                if year_col != "year":
+                    df = df.withColumnRenamed(year_col, "year")
+                df = df.withColumn("year", col("year").cast("int"))
+
+            if df.filter(col("year").isNull()).count() > 0:
+                raise ValueError(f"Ano nulo detectado em {self.source}. Verifique se o CSV possui coluna 'year' ou se o nome do arquivo contem um ano (YYYY).")
+
+            # Colunas que compoem o hash (exclui metadata adicionada depois)
+            hash_cols = [c for c in df.columns if c not in ("source", "ingestion_date", "row_hash", "file_name")]
+
+            df = (df
+                  .withColumn("source", lit(self.source))
+                  .withColumn("ingestion_date", current_timestamp())
+                  .withColumn("row_hash", sha2(concat_ws("||", *hash_cols), 256))
+                  .withColumn("file_name", input_file_name()))
+
+            bronze_table = f"bronze.{self.source}"
+            bronze_path = f"abfss://{self.container}@{self.storage}.dfs.core.windows.net/bronze/{self.source}"
+
+            if not spark.catalog.tableExists(bronze_table):
+                try:
+                    dbutils.fs.rm(bronze_path, recurse=True)
+                except Exception:
+                    pass
+                (df.write
+                 .format("delta")
+                 .mode("overwrite")
+                 .partitionBy("year")
+                 .option("path", bronze_path)
+                 .saveAsTable(bronze_table))
+            else:
+                delta_table = DeltaTable.forName(spark, bronze_table)
+                (delta_table.alias("t")
+                 .merge(df.alias("s"), "t.source = s.source AND t.year = s.year AND t.row_hash = s.row_hash")
+                 .whenMatchedUpdateAll()
+                 .whenNotMatchedInsertAll()
+                 .execute())
+
+            # Metadados de arquivo processado
+            file_meta_df = (df.groupBy("year", "file_name")
+                             .count()
+                             .withColumn("source", lit(self.source))
+                             .withColumn("ingestion_date", current_timestamp())
+                             .withColumn("year", col("year").cast("int"))
+                             .withColumn("rows", col("count").cast("long"))
+                             .select("source", "year", "file_name", "rows", "ingestion_date"))
+            if not spark.catalog.tableExists("bronze.file_metadata"):
+                file_meta_df.write.format("delta").mode("overwrite").saveAsTable("bronze.file_metadata")
+            else:
+                file_meta_df.write.format("delta").mode("append").saveAsTable("bronze.file_metadata")
+
+            print(f"  [{self.source}] batch {batch_id} processado: {df.count()} registros")
+        except Exception as e:
+            msg = f"[{self.source}] ERRO no foreachBatch: {type(e).__name__}: {e}\n{traceback.format_exc()}"
+            print(msg)
+            raise
 
 
 # COMMAND ----------
@@ -242,7 +264,6 @@ for source, config in SOURCE_CONFIGS.items():
         print(f"Pasta {src_dir} nao encontrada; ignorando {source} nesta execucao.")
         continue
 
-    bronze_path = f"abfss://{container}@{storage}.dfs.core.windows.net/bronze/{source}"
     schema_location = f"abfss://{container}@{storage}.dfs.core.windows.net/bronze/_schemas/{source}"
     checkpoint_location = f"abfss://{container}@{storage}.dfs.core.windows.net/bronze/_checkpoints/{source}"
 
@@ -259,12 +280,10 @@ for source, config in SOURCE_CONFIGS.items():
                    .option("delimiter", config["delimiter"])
                    .load(src_dir))
 
-    # Cria a funcao de batch com source/config fixados
-    def make_processor(src, cfg):
-        return lambda batch_df, bid: process_batch(src, cfg, batch_df, bid)
+    processor = BronzeBatchProcessor(source, config, storage, container)
 
     query = (stream_df.writeStream
-             .foreachBatch(make_processor(source, config))
+             .foreachBatch(processor)
              .option("checkpointLocation", checkpoint_location)
              .queryName(f"bronze_{source}_autoloader")
              .trigger(availableNow=True)
