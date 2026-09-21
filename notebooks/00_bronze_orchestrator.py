@@ -240,10 +240,7 @@ class BronzeBatchProcessor:
                              .withColumn("year", col("year").cast("int"))
                              .withColumn("rows", col("count").cast("long"))
                              .select("source", "year", "file_name", "rows", "ingestion_date"))
-            if not spark.catalog.tableExists("bronze.file_metadata"):
-                file_meta_df.write.format("delta").mode("overwrite").saveAsTable("bronze.file_metadata")
-            else:
-                file_meta_df.write.format("delta").mode("append").saveAsTable("bronze.file_metadata")
+            file_meta_df.write.format("delta").mode("append").saveAsTable("bronze.file_metadata")
 
             print(f"  [{self.source}] batch {batch_id} processado: {df.count()} registros")
         except Exception as e:
@@ -254,6 +251,19 @@ class BronzeBatchProcessor:
 
 # COMMAND ----------
 
+
+# Garante que bronze.file_metadata existe antes de iniciar os streams,
+# evitando race condition quando varios streams tentam cria-la em paralelo.
+spark.sql("""
+CREATE TABLE IF NOT EXISTS bronze.file_metadata (
+    source STRING,
+    year INT,
+    file_name STRING,
+    rows LONG,
+    ingestion_date TIMESTAMP
+) USING DELTA
+LOCATION 'abfss://{container}@{storage}.dfs.core.windows.net/bronze/_metadata/file_metadata'
+""".format(container=container, storage=storage))
 
 processed_sources = []
 for source, config in SOURCE_CONFIGS.items():
