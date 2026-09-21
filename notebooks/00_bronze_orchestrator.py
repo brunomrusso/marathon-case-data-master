@@ -208,7 +208,8 @@ class BronzeBatchProcessor:
                   .withColumn("source", lit(self.source))
                   .withColumn("ingestion_date", current_timestamp())
                   .withColumn("row_hash", sha2(concat_ws("||", *hash_cols), 256))
-                  .withColumn("file_name", input_file_name()))
+                  .withColumn("file_name", input_file_name())
+                  .dropDuplicates(["row_hash"]))
 
             bronze_table = f"bronze.{self.source}"
             bronze_path = f"abfss://{self.container}@{self.storage}.dfs.core.windows.net/bronze/{self.source}"
