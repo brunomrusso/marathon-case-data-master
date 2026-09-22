@@ -120,12 +120,13 @@ def main():
                 "new_cluster": {
                     "spark_version": "14.3.x-scala2.12",
                     "node_type_id": "Standard_DS3_v2",
-                    "autoscale": {
-                        "min_workers": 1,
-                        "max_workers": 4,
-                    },
+                    "num_workers": 0,
                     "data_security_mode": "SINGLE_USER",
-                    "custom_tags": {"ResourceClass": "AutoScaled"},
+                    "spark_conf": {
+                        "spark.databricks.cluster.profile": "singleNode",
+                        "spark.master": "local[*]",
+                    },
+                    "custom_tags": {"ResourceClass": "SingleNode"},
                     "auto_termination_minutes": 20,
                 },
             }

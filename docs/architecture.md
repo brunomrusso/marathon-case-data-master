@@ -91,7 +91,7 @@ Gera agregações e métricas para o dashboard. Tabelas **externas** armazenadas
 ## Escalabilidade e Observabilidade
 
 - ADLS Gen2 para armazenamento distribuído.
-- **Job cluster com autoscaling** de 1 a 4 workers (`Standard_DS3_v2`) para processamento elástico.
+- **Job cluster single-node** `Standard_DS3_v2` para o case demonstrativo (autoscaling disponível alterando `scripts/create_databricks_workflow.py`).
 - **Delta Lake** com partições por `source` e `year` e `OPTIMIZE` + `ZORDER` para leitura eficiente.
 - Ingestão event-driven: cluster só liga quando arquivos chegam.
 - Ingestão de London otimizada com leitura em lote ao invés de uma chamada por arquivo.

@@ -199,7 +199,7 @@ O workflow executa em sequência:
 5. **03_gold_aggregations** — gera as tabelas `gold.*` para o dashboard, incluindo `gold.weather_impact`, aplica `OPTIMIZE` + `ZORDER` e loga agregações e schema drift.
 6. **05_governance_security** — aplica **column masks** e **row filters** do Unity Catalog na tabela `silver.marathons_pii` (campos `athlete_name` e `athlete_id`).
 
-> O workflow roda em um **job cluster com autoscaling** (1–4 workers `Standard_DS3_v2`) para demonstrar escalabilidade, com auto-termination de 20 minutos.
+> O workflow roda em um **single-node job cluster** `Standard_DS3_v2` para o case demonstrativo. O cluster pode ser trocado para autoscaling editando `scripts/create_databricks_workflow.py` quando houver ambientes de worker disponíveis na assinatura.
 
 > **Rastreamento end-to-end:** `run_id` e `batch_id` são gerados no `00_bronze_orchestrator` e propagados via `dbutils.jobs.taskValues` para Silver, Weather e Gold. A tabela `monitoring.data_quality_log` permite rastrear cada execução por camada, incluindo `row_count_in`, `row_count_out`, `rejected_records`, `% nulos`, `schema_drift_flag` e `execution_time_sec`.
 >
