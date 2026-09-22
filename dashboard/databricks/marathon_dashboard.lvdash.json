@@ -62,6 +62,20 @@
       "queryLines": [
         "SELECT year, 'Berlin' AS source, berlin_finishers AS finishers, ROUND(berlin_avg_time / 60, 1) AS avg_time_min FROM marathon_comparison WHERE berlin_finishers IS NOT NULL UNION ALL SELECT year, 'Chicago', chicago_finishers, ROUND(chicago_avg_time / 60, 1) FROM marathon_comparison WHERE chicago_finishers IS NOT NULL UNION ALL SELECT year, 'London', london_finishers, ROUND(london_avg_time / 60, 1) FROM marathon_comparison WHERE london_finishers IS NOT NULL UNION ALL SELECT year, 'New York', nyc_finishers, ROUND(nyc_avg_time / 60, 1) FROM marathon_comparison WHERE nyc_finishers IS NOT NULL ORDER BY year, source"
       ]
+    },
+    {
+      "name": "pipeline_runs",
+      "displayName": "Execuções do pipeline",
+      "queryLines": [
+        "SELECT run_id, batch_id, MAX(recorded_at) AS recorded_at, SUM(execution_time_sec) AS total_execution_time_sec, MAX(CASE WHEN status IN ('FAIL', 'ERROR') THEN 1 ELSE 0 END) AS has_failure FROM monitoring.data_quality_log GROUP BY run_id, batch_id ORDER BY recorded_at DESC"
+      ]
+    },
+    {
+      "name": "quality_metrics",
+      "displayName": "Métricas de qualidade",
+      "queryLines": [
+        "SELECT layer, step, source, year, row_count_in, row_count_out, rejected_records, schema_drift_flag, execution_time_sec, status, recorded_at FROM monitoring.data_quality_log ORDER BY recorded_at DESC"
+      ]
     }
   ],
   "pages": [
@@ -1654,6 +1668,233 @@
             "y": 1,
             "width": 12,
             "height": 6
+          }
+        }
+      ]
+    },
+    {
+      "name": "observability-page",
+      "displayName": "Observabilidade",
+      "pageType": "PAGE_TYPE_REPORT",
+      "layout": [
+        {
+          "widget": {
+            "name": "obs-kpi-latest-status",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "pipeline_runs",
+                  "fields": [
+                    {
+                      "name": "has_failure",
+                      "expression": "has_failure"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "kpi",
+              "encodings": {
+                "value": {
+                  "fieldName": "has_failure",
+                  "aggregation": "MAX"
+                }
+              },
+              "options": {
+                "title": "Última execução falhou?",
+                "description": "0 = sucesso, 1 = falha"
+              }
+            }
+          }
+        },
+        {
+          "widget": {
+            "name": "obs-pipeline-runs-table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "pipeline_runs",
+                  "fields": [
+                    {
+                      "name": "run_id",
+                      "expression": "run_id"
+                    },
+                    {
+                      "name": "batch_id",
+                      "expression": "batch_id"
+                    },
+                    {
+                      "name": "recorded_at",
+                      "expression": "recorded_at"
+                    },
+                    {
+                      "name": "total_execution_time_sec",
+                      "expression": "total_execution_time_sec"
+                    },
+                    {
+                      "name": "has_failure",
+                      "expression": "has_failure"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "run_id",
+                    "displayName": "Run ID"
+                  },
+                  {
+                    "fieldName": "batch_id",
+                    "displayName": "Batch ID"
+                  },
+                  {
+                    "fieldName": "recorded_at",
+                    "displayName": "Registrado em"
+                  },
+                  {
+                    "fieldName": "total_execution_time_sec",
+                    "displayName": "Tempo total (s)"
+                  },
+                  {
+                    "fieldName": "has_failure",
+                    "displayName": "Falha"
+                  }
+                ]
+              },
+              "options": {
+                "title": "Histórico de execuções"
+              }
+            }
+          }
+        },
+        {
+          "widget": {
+            "name": "obs-execution-time-chart",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "quality_metrics",
+                  "fields": [
+                    {
+                      "name": "step",
+                      "expression": "step"
+                    },
+                    {
+                      "name": "execution_time_sec",
+                      "expression": "execution_time_sec"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "step",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "execution_time_sec",
+                  "aggregation": "AVG"
+                }
+              },
+              "options": {
+                "title": "Tempo médio de execução por etapa"
+              }
+            }
+          }
+        },
+        {
+          "widget": {
+            "name": "obs-schema-drift-count",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "quality_metrics",
+                  "fields": [
+                    {
+                      "name": "schema_drift_flag",
+                      "expression": "schema_drift_flag"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "kpi",
+              "encodings": {
+                "value": {
+                  "fieldName": "schema_drift_flag",
+                  "aggregation": "SUM"
+                }
+              },
+              "options": {
+                "title": "Alertas de schema drift"
+              }
+            }
+          }
+        },
+        {
+          "widget": {
+            "name": "obs-rejected-records-chart",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "quality_metrics",
+                  "fields": [
+                    {
+                      "name": "step",
+                      "expression": "step"
+                    },
+                    {
+                      "name": "rejected_records",
+                      "expression": "rejected_records"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "step",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "rejected_records",
+                  "aggregation": "SUM"
+                }
+              },
+              "options": {
+                "title": "Registros rejeitados por etapa"
+              }
+            }
           }
         }
       ]

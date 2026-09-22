@@ -31,10 +31,12 @@ Solução de Engenharia de Dados na Azure para processar e visualizar dados das 
 - Unifica os esquemas diferentes das quatro maratonas.
 - Aplica mascaramento e anonimização de atletas.
 - Garante qualidade com regras de validação.
-- Tabela **externa** armazenada em `abfss://.../silver/marathons`.
+- Tabela **externa** anonimizada `silver.marathons` armazenada em `abfss://.../silver/marathons`.
+- Tabela **externa** PII `silver.marathons_pii` contém `athlete_name`/`athlete_id` e é protegida por **column masks** e **row filters** do Unity Catalog.
 - Tabela `bronze.marathon_metadata` — data, cidade, país, latitude e longitude de cada prova (gerada via heurística ou carregada de CSV).
 - Tabela `bronze.weather_raw` — cache dos dados de clima parseados a partir dos JSONs brutos em `raw/weather_api/`.
 - Tabela `silver.marathons_with_weather` enriquece os resultados com condições climáticas do dia da prova (temperatura, precipitação, vento).
+- `OPTIMIZE` + `ZORDER` aplicados nas tabelas Silver para compactação e leitura eficiente.
 
 ### Gold
 
@@ -50,6 +52,7 @@ Gera agregações e métricas para o dashboard. Tabelas **externas** armazenadas
 | `gold.marathon_comparison` | Comparativo direto entre as quatro maratonas: tempo médio, record, total e % feminino. |
 | `gold.age_gender_profile` | Perfil demográfico dos finishers: contagem e tempo médio por grupo etário e gênero. |
 | `gold.weather_impact` | Correlação entre condições climáticas e desempenho médio. Criada somente quando `silver.marathons_with_weather` estiver disponível. |
+| `silver.marathons_pii` | Tabela segura com dados pessoais; acessível via Unity Catalog column masks e row filters. |
 
 ### Monitoring
 
@@ -71,13 +74,15 @@ Gera agregações e métricas para o dashboard. Tabelas **externas** armazenadas
    - Para cada `(source, year)` sem registro, chama Open-Meteo, persiste JSON bruto em `raw/weather_api/`, parseia e grava em `bronze.weather_raw` via `MERGE`.
    - Cria `silver.marathons_with_weather` com join por `source + year`.
    - Registra métricas em `monitoring.data_quality_log`.
-7. `03_gold_aggregations` gera todas as tabelas Gold. Usa `silver.marathons_with_weather` quando disponível; cai para `silver.marathons` caso contrário. Registra métricas.
-8. O dashboard consome as tabelas Gold.
+7. `03_gold_aggregations` gera todas as tabelas Gold, aplica `OPTIMIZE` + `ZORDER` e registra métricas. Usa `silver.marathons_with_weather` quando disponível; cai para `silver.marathons` caso contrário.
+8. `05_governance_security` aplica **column masks** e **row filters** do Unity Catalog em `silver.marathons_pii`.
+9. O dashboard consome as tabelas Gold e a página de **Observabilidade** consome `monitoring.data_quality_log`.
 
 ## Governança e Segurança
 
 - Todas as tabelas são registradas no **Unity Catalog** (`marathon.bronze.*`, `marathon.silver.*`, `marathon.gold.*`, `marathon.monitoring.*`).
-- Dados sensíveis (nomes e identificadores de atletas) mascarados na Silver via hash SHA-256.
+- Dados sensíveis (nomes e identificadores de atletas) anonimizados na `silver.marathons` via hash SHA-256.
+- A tabela `silver.marathons_pii` mantém os campos pessoais originais e é protegida por **column masks** e **row filters** do Unity Catalog (`is_member('admins')` vê valor real; outros veem `***`).
 - Acesso ao ADLS via **Azure Access Connector** e managed identity.
 - Criptografia em trânsito e em repouso do ADLS Gen2.
 - Controle de acesso via RBAC do Azure e permissões do Unity Catalog.
@@ -86,8 +91,8 @@ Gera agregações e métricas para o dashboard. Tabelas **externas** armazenadas
 ## Escalabilidade e Observabilidade
 
 - ADLS Gen2 para armazenamento distribuído.
-- Databricks auto-scaling para processamento.
-- Delta Lake com partições por `source` e `year`.
+- **Job cluster com autoscaling** de 1 a 4 workers (`Standard_DS3_v2`) para processamento elástico.
+- **Delta Lake** com partições por `source` e `year` e `OPTIMIZE` + `ZORDER` para leitura eficiente.
 - Ingestão event-driven: cluster só liga quando arquivos chegam.
 - Ingestão de London otimizada com leitura em lote ao invés de uma chamada por arquivo.
 - **Observabilidade:** tabela `marathon.monitoring.data_quality_log` (append-only, `mergeSchema=true`) registra por step/notebook:
@@ -98,6 +103,7 @@ Gera agregações e métricas para o dashboard. Tabelas **externas** armazenadas
   - `execution_time_sec` — identifica gargalos por etapa
   - **O pipeline nunca falha por schema drift** — registra `WARN` e continua. Dados com colunas obrigatórias ausentes são marcados como `rejected_records`.
 - **Rastreabilidade end-to-end:** `run_id` (UUID) e `batch_id` (timestamp) gerados no `00_bronze_orchestrator` e propagados via `dbutils.jobs.taskValues` para todos os notebooks downstream.
+- **Dashboard de Observabilidade:** página dedicada no dashboard AI/BI com KPIs de execução, schema drift, registros rejeitados e tempo por etapa (fonte `monitoring.data_quality_log`).
 - **Alertas:** notificações por email configuradas no Databricks Workflow para falhas (`ALERT_EMAIL`).
 - **Lineage:** o Unity Catalog captura automaticamente lineage de leitura/escrita. Visualize em **Catalog > Tables > Lineage** nas tabelas Silver e Gold.
 

@@ -11,17 +11,17 @@ Desenvolver uma solução completa de Engenharia de Dados para ingerir, processa
 - **Armazenamento:** Azure Data Lake Storage Gen2 com Delta Lake
 - **Processamento:** Azure Databricks + PySpark
 - **Orquestração:** Databricks Workflows
-- **Ingestão:** File Arrival Trigger no Databricks Workflow
-- **Governança:** Unity Catalog, External Locations e Managed Identities
-- **Observabilidade:** Databricks Job Metrics + tabela `monitoring.data_quality_log` com contagem in/out, % nulos, rejeitados, schema drift e tempo de execução por camada. Alertas por email no workflow. Lineage automático do Unity Catalog.
-- **Segurança:** Azure Key Vault, RBAC, criptografia, mascaramento e Access Connector
+- **Ingestão:** File Arrival Trigger no Databricks Workflow + Auto Loader `cloudFiles`
+- **Governança:** Unity Catalog, External Locations, Managed Identities, **column masks** e **row filters** nativos
+- **Observabilidade:** Databricks Job Metrics + tabela `monitoring.data_quality_log` + página de **Observabilidade** no dashboard AI/BI
+- **Segurança:** OIDC, RBAC, criptografia, mascaramento e Access Connector
 - **Dashboard:** Databricks AI/BI provisionado por Terraform; Streamlit opcional para consumo externo
 
 ### Arquitetura Medalhão
 - **Raw:** landing zone para CSV de resultados e JSONs brutos da API Open-Meteo (`raw/weather_api/`). Nenhum dado é processado nesta camada.
 - **Bronze:** ingestão dos CSVs via **Databricks Auto Loader** (`cloudFiles`), uma stream por fonte, com checkpoint e schema inferido por subpasta. Carga incremental idempotente via `MERGE` no Delta Lake. Tabelas **externas** no ADLS (`bronze/<source>`). Inclui `bronze.marathon_metadata` e `bronze.weather_raw`.
-- **Silver:** limpeza, padronização de schema, integração das fontes, mascaramento/anonimização e validação. Inclui `silver.marathons` e `silver.marathons_with_weather` (enriquecida com clima). Tabelas **externas** no ADLS.
-- **Gold:** agregações e métricas para alimentar o dashboard. Tabelas **externas** no ADLS (`gold/<tabela>`). Ver seção de tabelas Gold.
+- **Silver:** limpeza, padronização de schema, integração das fontes, mascaramento/anonimização e validação. Inclui `silver.marathons` (anonimizada), `silver.marathons_pii` (dados pessoais com masks do Unity Catalog) e `silver.marathons_with_weather` (enriquecida com clima). Tabelas **externas** no ADLS.
+- **Gold:** agregações e métricas para alimentar o dashboard. Tabelas **externas** no ADLS (`gold/<tabela>`), otimizadas com `OPTIMIZE` + `ZORDER`. Ver seção de tabelas Gold.
 - **Monitoring:** tabela `monitoring.data_quality_log` com métricas de qualidade por camada, rastreabilidade end-to-end via `run_id`/`batch_id`, schema drift e tempo de execução.
 
 Todas as camadas são catalogadas no **Unity Catalog** (`marathon.bronze.*`, `marathon.silver.*`, `marathon.gold.*`), mas com os arquivos Delta armazenados em locais controlados pelo ADLS.
@@ -196,7 +196,10 @@ O workflow executa em sequência:
 2. **01_bronze_ingestion** — notebook legacy de ingestão batch (não mais invocado pelo workflow; mantido como referência).
 3. **02_silver_etl** — gera a tabela `silver.marathons` e loga qualidade (registros inválidos, % nulos, schema drift).
 4. **04_weather_enrichment** — enriquece a Silver com dados climáticos do dia da prova (temperatura, precipitação, vento) via API pública Open-Meteo. Salva o JSON bruto da API em `raw/weather_api/` (padrão raw landing), gera `bronze.marathon_metadata`, `bronze.weather_raw` e `silver.marathons_with_weather`. Também loga API failures e cache.
-5. **03_gold_aggregations** — gera as tabelas `gold.*` para o dashboard, incluindo `gold.weather_impact`, e loga agregações e schema drift.
+5. **03_gold_aggregations** — gera as tabelas `gold.*` para o dashboard, incluindo `gold.weather_impact`, aplica `OPTIMIZE` + `ZORDER` e loga agregações e schema drift.
+6. **05_governance_security** — aplica **column masks** e **row filters** do Unity Catalog na tabela `silver.marathons_pii` (campos `athlete_name` e `athlete_id`).
+
+> O workflow roda em um **job cluster com autoscaling** (1–4 workers `Standard_DS3_v2`) para demonstrar escalabilidade, com auto-termination de 20 minutos.
 
 > **Rastreamento end-to-end:** `run_id` e `batch_id` são gerados no `00_bronze_orchestrator` e propagados via `dbutils.jobs.taskValues` para Silver, Weather e Gold. A tabela `monitoring.data_quality_log` permite rastrear cada execução por camada, incluindo `row_count_in`, `row_count_out`, `rejected_records`, `% nulos`, `schema_drift_flag` e `execution_time_sec`.
 >
@@ -216,6 +219,7 @@ Todas as tabelas Gold ficam em `marathon.gold.*` e são o ponto de consumo do da
 | `gold.marathon_comparison` | Comparativo direto entre as quatro maratonas por ano: finishers e tempo médio de cada uma. |
 | `gold.age_gender_profile` | Perfil demográfico: contagem e tempo médio por faixa etária, gênero, fonte e ano. |
 | `gold.weather_impact` | Correlação entre temperatura, precipitação, vento e desempenho médio. Disponível somente quando `silver.marathons_with_weather` está populada. |
+| `silver.marathons_pii` | Tabela segura com dados pessoais; acessível via Unity Catalog column masks e row filters. |
 
 ### 12.1 Qualidade e Schema Drift
 
@@ -267,6 +271,7 @@ O setup usa `no_wait=true`: não bloqueia esperando o compute iniciar e imprime 
 | Demografia | Perfil por faixa etária e gênero (F, M, X) |
 | Comparação entre maratonas | Evolução histórica comparativa das quatro majors |
 | Clima e performance | Correlação temperatura/precipitação × tempo médio por edição |
+| Observabilidade | KPIs de qualidade: execuções, schema drift, rejeitados, tempo por etapa |
 
 As sete tabelas de `marathon.gold` consumidas são: `kpi_summary`, `finishers_by_year`, `top_countries`, `age_gender_profile`, `weather_impact`, `times_distribution` e `marathon_comparison`.
 

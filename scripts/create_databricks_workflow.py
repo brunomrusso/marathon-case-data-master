@@ -61,6 +61,12 @@ def main():
             "notebook_task": {"notebook_path": f"{workspace_root}/notebooks/03_gold_aggregations"},
             "description": "Generate Gold tables",
         },
+        {
+            "task_key": "governance_security",
+            "depends_on": [{"task_key": "gold_aggregations"}],
+            "notebook_task": {"notebook_path": f"{workspace_root}/notebooks/05_governance_security"},
+            "description": "Apply Unity Catalog column masks and row filters",
+        },
     ]
 
     # Trigger: file_arrival (requer EventGrid registrado) ou schedule (mais simples)
@@ -114,13 +120,12 @@ def main():
                 "new_cluster": {
                     "spark_version": "14.3.x-scala2.12",
                     "node_type_id": "Standard_DS3_v2",
-                    "num_workers": 0,
-                    "data_security_mode": "SINGLE_USER",
-                    "spark_conf": {
-                        "spark.databricks.cluster.profile": "singleNode",
-                        "spark.master": "local[*]",
+                    "autoscale": {
+                        "min_workers": 1,
+                        "max_workers": 4,
                     },
-                    "custom_tags": {"ResourceClass": "SingleNode"},
+                    "data_security_mode": "SINGLE_USER",
+                    "custom_tags": {"ResourceClass": "AutoScaled"},
                     "auto_termination_minutes": 20,
                 },
             }

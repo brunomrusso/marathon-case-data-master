@@ -46,6 +46,7 @@ config = yaml.safe_load(config_yaml)
 storage = config["azure"]["storage_account"]
 container = config["azure"]["container"]
 silver_path = f"abfss://{container}@{storage}.dfs.core.windows.net/silver/marathons"
+silver_pii_path = f"abfss://{container}@{storage}.dfs.core.windows.net/silver/marathons_pii"
 
 # Recupera run_id/batch_id propagado do orquestrador
 run_id = "manual"
@@ -297,7 +298,18 @@ row_count_in = chicago_count_in + london_count_in + nyc_count_in + berlin_count_
 
 # COMMAND ----------
 
-# Mascaramento/anonimização
+# Persiste tabela PII segura (com athlete_name/athlete_id) para demonstrar
+# mascaramento nativo do Unity Catalog. A tabela silver.marathons continua
+# anonimizada e é usada pelo restante do pipeline.
+pii_df = union_df.select(common_cols)
+(pii_df.write
+ .format("delta")
+ .mode("overwrite")
+ .partitionBy("source", "year")
+ .option("path", silver_pii_path)
+ .saveAsTable("silver.marathons_pii"))
+
+# Mascaramento/anonimização da tabela principal
 union_df = (union_df
     .withColumn("athlete_id_hash", sha2(concat_ws("||", "source", "year",
         coalesce(col("athlete_id"), col("athlete_name"), col("place_overall").cast("string"))), 256))
@@ -341,6 +353,10 @@ except Exception:
  .partitionBy("source", "year")
  .option("path", silver_path)
  .saveAsTable("silver.marathons"))
+
+# Otimização física: compacta arquivos pequenos e organiza por source/year
+spark.sql(f"OPTIMIZE {catalog_name}.silver.marathons ZORDER BY (source, year)")
+spark.sql(f"OPTIMIZE {catalog_name}.silver.marathons_pii ZORDER BY (source, year)")
 
 execution_time = time.time() - start_time
 

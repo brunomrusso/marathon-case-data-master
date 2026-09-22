@@ -444,6 +444,11 @@ silver_with_weather.write.format("delta").mode("overwrite").option(
 
 print("Tabela silver.marathons_with_weather criada/atualizada.")
 
+# Otimização física das tabelas de clima
+spark.sql(f"OPTIMIZE {catalog_name}.bronze.weather_raw ZORDER BY (source, year)")
+spark.sql(f"OPTIMIZE {catalog_name}.bronze.marathon_metadata ZORDER BY (source, year)")
+spark.sql(f"OPTIMIZE {catalog_name}.silver.marathons_with_weather ZORDER BY (source, year)")
+
 # COMMAND ----------
 
 # % de nulos em colunas de clima para detectar falhas de enriquecimento

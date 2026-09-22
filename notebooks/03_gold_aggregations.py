@@ -130,7 +130,7 @@ expected_gold_tables = {
 }
 
 
-def save_gold(df, table, partition_cols=None):
+def save_gold(df, table, partition_cols=None, zorder_cols=None):
     gold_path = f"abfss://{container}@{storage}.dfs.core.windows.net/gold/{table}"
     try:
         dbutils.fs.rm(gold_path, recurse=True)
@@ -143,6 +143,9 @@ def save_gold(df, table, partition_cols=None):
     if partition_cols:
         writer = writer.partitionBy(*partition_cols)
     writer.saveAsTable(f"gold.{table}")
+    # Otimização física: compacta arquivos pequenos e melhora leitura por source/year
+    zorder_sql = f" ZORDER BY ({', '.join(zorder_cols)})" if zorder_cols else ""
+    spark.sql(f"OPTIMIZE {catalog_name}.gold.{table}{zorder_sql}")
 
 
 # Usa Silver enriquecida com clima; se ainda não existir, cai de volta para silver.marathons
@@ -168,7 +171,7 @@ kpi_summary = (silver
     )
     .withColumn("female_pct", spark_round(col("female_count") / col("total_athletes") * 100, 2)))
 
-save_gold(kpi_summary, "kpi_summary", ["source", "year"])
+save_gold(kpi_summary, "kpi_summary", ["source", "year"], zorder_cols=["source"])
 
 # COMMAND ----------
 
@@ -195,7 +198,7 @@ top_countries = (silver
         avg("finish_time_sec").alias("avg_finish_time_sec")
     ))
 
-save_gold(top_countries, "top_countries", ["source", "year"])
+save_gold(top_countries, "top_countries", ["source", "year"], zorder_cols=["country"])
 
 # COMMAND ----------
 
@@ -208,7 +211,7 @@ athletes_by_country = (silver
         avg("finish_time_sec").alias("avg_finish_time_sec")
     ))
 
-save_gold(athletes_by_country, "athletes_by_country")
+save_gold(athletes_by_country, "athletes_by_country", zorder_cols=["country"])
 
 # COMMAND ----------
 

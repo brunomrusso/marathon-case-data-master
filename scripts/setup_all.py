@@ -669,6 +669,7 @@ def step_deploy_notebooks(state):
         "02_silver_etl.py",
         "03_gold_aggregations.py",
         "04_weather_enrichment.py",
+        "05_governance_security.py",
     }
     missing = sorted(required - {path.name for path in notebook_files})
     if missing:

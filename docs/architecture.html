@@ -205,7 +205,9 @@ flowchart LR
                 <ul>
                     <li>Normalização de schema, padronização de nomes e tipos</li>
                     <li>Integração das quatro fontes em <code>silver.marathons</code></li>
+                    <li>Tabela <code>silver.marathons_pii</code> mantém dados pessoais sob <strong>column masks</strong> e <strong>row filters</strong> do Unity Catalog</li>
                     <li>Mascaramento de dados sensíveis (nomes e identificadores via SHA-256) — orientação LGPD</li>
+                    <li><code>OPTIMIZE</code> + <code>ZORDER</code> nas tabelas Silver</li>
                     <li>Validação de qualidade e registro em <code>monitoring.data_quality_log</code></li>
                 </ul>
             </div>
@@ -215,6 +217,7 @@ flowchart LR
                     <li>Agregações prontas para análise e dashboard</li>
                     <li>Tabelas: <code>gold.kpi_summary</code>, <code>gold.top_countries</code>, <code>gold.weather_impact</code>, <code>gold.athletes_by_country</code>, etc.</li>
                     <li>Enriquecimento climático via Open-Meteo em <code>gold.weather_impact</code></li>
+                    <li>Otimização física com <code>OPTIMIZE</code> + <code>ZORDER</code> para leitura eficiente</li>
                 </ul>
             </div>
         </section>
@@ -274,7 +277,13 @@ flowchart TB
     S1 --> G2
     S1 --> G4
     S4 --> G3
-    G1 --> DASH[AI/BI Dashboard]
+    G1 --> GOV[05_governance_security]
+    G2 --> GOV
+    G3 --> GOV
+    G4 --> GOV
+    G5 --> GOV
+    GOV --> DASH[AI/BI Dashboard]
+    G1 --> DASH
     G2 --> DASH
     G3 --> DASH
     G4 --> DASH
@@ -291,9 +300,10 @@ flowchart TB
                 <tr><td>Autenticação local</td><td><code>az login</code> (Microsoft Entra ID)</td></tr>
                 <tr><td>Autenticação CI</td><td>GitHub OIDC federado → Azure</td></tr>
                 <tr><td>Segredos</td><td>Nenhuma chave estática; Databricks secrets guardam apenas configuração</td></tr>
-                <tr><td>LGPD</td><td>Hash SHA-256 de nomes/identificadores na Silver</td></tr>
-                <tr><td>Observabilidade</td><td><code>monitoring.data_quality_log</code> com row counts, % nulos, schema drift e tempo de execução</td></tr>
+                <tr><td>LGPD</td><td>Hash SHA-256 de nomes/identificadores na Silver + <code>silver.marathons_pii</code> protegida por <strong>column masks</strong> e <strong>row filters</strong> do Unity Catalog</td></tr>
+                <tr><td>Observabilidade</td><td><code>monitoring.data_quality_log</code> com row counts, % nulos, schema drift e tempo de execução; página dedicada no dashboard AI/BI</td></tr>
                 <tr><td>Lineage</td><td>Capturado automaticamente pelo Unity Catalog</td></tr>
+                <tr><td>Escalabilidade</td><td>Cluster de job com <strong>autoscaling</strong> (1–4 workers) + <code>OPTIMIZE</code> + <code>ZORDER</code> nas tabelas Delta</td></tr>
             </table>
         </section>
 
