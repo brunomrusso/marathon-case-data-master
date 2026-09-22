@@ -20,10 +20,12 @@ from pathlib import Path
 import requests
 
 ROOT = Path(__file__).parent.parent
-DASH_FILE = ROOT / "dashboard" / "databricks" / "marathon_dashboard.lvdash.json"
+DASH_DIR = ROOT / "dashboard" / "databricks"
+MAIN_DASH_FILE = DASH_DIR / "marathon_dashboard.lvdash.json"
+OBS_DASH_FILE = DASH_DIR / "observability_dashboard.lvdash.json"
 SETUP_STATE = ROOT / ".setup_state.json"
 
-# Gold tables in the dashboard that need catalog prefix
+# Gold tables in the main dashboard that need catalog prefix
 GOLD_TABLES = [
     "kpi_summary",
     "finishers_by_year",
@@ -34,61 +36,30 @@ GOLD_TABLES = [
     "marathon_comparison",
 ]
 
-# Monitoring table (different schema)
-MONITORING_TABLES = [
-    "monitoring.data_quality_log",
-]
 
-
-def add_catalog_prefix(query: str, catalog: str) -> str:
-    """Replace bare Gold table names with catalog.gold.tablename."""
+def add_prefixes(query: str, replacements: list[tuple[str, str]]) -> str:
+    """Replace bare table names with fully-qualified catalog.schema.table names."""
     result = query
-    for table in GOLD_TABLES:
-        # Match the bare table name (not already prefixed with a catalog/schema)
-        # Negative lookbehind for dot to avoid double-prefixing
-        pattern = r'(?<![.\w])' + re.escape(table) + r'(?![.\w])'
-        replacement = f"{catalog}.gold.{table}"
-        result = re.sub(pattern, replacement, result)
-    # Fix monitoring schema to be fully qualified
-    result = result.replace("monitoring.data_quality_log", f"{catalog}.monitoring.data_quality_log")
+    for bare, qualified in replacements:
+        pattern = r'(?<![.\w])' + re.escape(bare) + r'(?![.\w])'
+        result = re.sub(pattern, qualified, result)
     return result
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--catalog", default="marathon",
-                        help="Unity Catalog name (default: marathon)")
-    parser.add_argument("--setup-state", default=str(SETUP_STATE),
-                        help="Path to .setup_state.json")
-    args = parser.parse_args()
-
-    token = os.environ.get("DATABRICKS_TOKEN", "")
-    if not token:
-        print("ERROR: DATABRICKS_TOKEN env var not set", file=sys.stderr)
-        sys.exit(1)
-
-    state = json.loads(Path(args.setup_state).read_text(encoding="utf-8"))
-    host = "https://" + state["outputs"]["databricks_workspace_url"]
-    dashboard_id = state["outputs"]["dashboard_id"]
-    warehouse_id = state["outputs"]["sql_warehouse_id"]
-
+def patch_dashboard(host: str, token: str, dashboard_id: str, warehouse_id: str,
+                    dash_file: Path, replacements: list[tuple[str, str]], label: str):
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
-    # Read dashboard JSON and inject catalog prefix into all queryLines
-    dash = json.loads(DASH_FILE.read_text(encoding="utf-8"))
+    dash = json.loads(dash_file.read_text(encoding="utf-8"))
     for dataset in dash.get("datasets", []):
         dataset["queryLines"] = [
-            add_catalog_prefix(q, args.catalog)
+            add_prefixes(q, replacements)
             for q in dataset.get("queryLines", [])
         ]
 
     serialized = json.dumps(dash, ensure_ascii=False)
 
-    # Verify prefixing worked
-    if f"{args.catalog}.gold.kpi_summary" not in serialized:
-        print(f"WARNING: catalog prefix for '{args.catalog}' not found in serialized dashboard")
-
-    print(f"Updating dashboard {dashboard_id} on {host} [catalog={args.catalog}]...")
+    print(f"Updating {label} {dashboard_id} on {host}...")
     resp = requests.patch(
         f"{host}/api/2.0/lakeview/dashboards/{dashboard_id}",
         headers=headers,
@@ -101,8 +72,7 @@ def main():
     data = resp.json()
     print(f"Updated: {data.get('display_name')} [{data.get('lifecycle_state')}]")
 
-    # Republish
-    print("Republishing dashboard...")
+    print(f"Republishing {label}...")
     resp2 = requests.post(
         f"{host}/api/2.0/lakeview/dashboards/{dashboard_id}/published",
         headers=headers,
@@ -112,8 +82,45 @@ def main():
     if resp2.status_code not in (200, 204):
         print(f"Publish failed {resp2.status_code}: {resp2.text[:500]}")
         sys.exit(1)
-    print("Dashboard republished successfully.")
+    print(f"{label} republished successfully.")
     print(f"URL: {host}/dashboardsv3/{dashboard_id}/published")
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--catalog", default="marathon",
+                        help="Unity Catalog name (default: marathon)")
+    parser.add_argument("--setup-state", default=str(SETUP_STATE),
+                        help="Path to .setup_state.json")
+    parser.add_argument("--dashboard", choices=["main", "observability", "both"],
+                        default="both",
+                        help="Which dashboard to repatch (default: both)")
+    args = parser.parse_args()
+
+    token = os.environ.get("DATABRICKS_TOKEN", "")
+    if not token:
+        print("ERROR: DATABRICKS_TOKEN env var not set", file=sys.stderr)
+        sys.exit(1)
+
+    state = json.loads(Path(args.setup_state).read_text(encoding="utf-8"))
+    host = "https://" + state["outputs"]["databricks_workspace_url"]
+    warehouse_id = state["outputs"]["sql_warehouse_id"]
+
+    gold_replacements = [(tbl, f"{args.catalog}.gold.{tbl}") for tbl in GOLD_TABLES]
+    monitoring_replacements = [("data_quality_log", f"{args.catalog}.monitoring.data_quality_log")]
+
+    if args.dashboard in ("main", "both"):
+        dashboard_id = state["outputs"]["dashboard_id"]
+        patch_dashboard(host, token, dashboard_id, warehouse_id,
+                        MAIN_DASH_FILE, gold_replacements, "dashboard principal")
+
+    if args.dashboard in ("observability", "both"):
+        obs_id = state["outputs"].get("observability_dashboard_id")
+        if not obs_id:
+            print("WARNING: observability_dashboard_id nao encontrado no setup_state; pulando.")
+        else:
+            patch_dashboard(host, token, obs_id, warehouse_id,
+                            OBS_DASH_FILE, monitoring_replacements, "dashboard de observabilidade")
 
 
 if __name__ == "__main__":

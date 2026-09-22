@@ -301,7 +301,7 @@ flowchart TB
                 <tr><td>Autenticação CI</td><td>GitHub OIDC federado → Azure</td></tr>
                 <tr><td>Segredos</td><td>Nenhuma chave estática; Databricks secrets guardam apenas configuração</td></tr>
                 <tr><td>LGPD</td><td>Hash SHA-256 de nomes/identificadores na Silver + views <code>marathons_pii_public</code>/<code>marathons_pii_admin</code> sobre <code>silver.marathons_pii</code></td></tr>
-                <tr><td>Observabilidade</td><td><code>monitoring.data_quality_log</code> com row counts, % nulos, schema drift e tempo de execução; página dedicada no dashboard AI/BI</td></tr>
+                <tr><td>Observabilidade</td><td><code>monitoring.data_quality_log</code> com row counts, % nulos, schema drift e tempo de execução; dashboard AI/BI separado</td></tr>
                 <tr><td>Lineage</td><td>Capturado automaticamente pelo Unity Catalog</td></tr>
                 <tr><td>Escalabilidade / Custo</td><td>Job cluster single-node <code>Standard_DS3_v2</code> para o case; autoscaling configurável via <code>create_databricks_workflow.py</code>. <code>OPTIMIZE</code> + <code>ZORDER</code> nas tabelas Delta. SQL Warehouse com auto-stop de 1 minuto; CI desliga o warehouse após execução.</td></tr>
             </table>

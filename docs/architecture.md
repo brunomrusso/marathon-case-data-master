@@ -76,7 +76,7 @@ Gera agregações e métricas para o dashboard. Tabelas **externas** armazenadas
    - Registra métricas em `monitoring.data_quality_log`.
 7. `03_gold_aggregations` gera todas as tabelas Gold, aplica `OPTIMIZE` + `ZORDER` e registra métricas. Usa `silver.marathons_with_weather` quando disponível; cai para `silver.marathons` caso contrário.
 8. `05_governance_security` cria views mascaradas (`marathons_pii_public`) e administrativa (`marathons_pii_admin`) sobre `silver.marathons_pii`.
-9. O dashboard consome as tabelas Gold e a página de **Observabilidade** consome `monitoring.data_quality_log`.
+9. O dashboard principal consome as tabelas Gold; o **dashboard de Observabilidade** separado consome `monitoring.data_quality_log`.
 
 ## Governança e Segurança
 
@@ -104,7 +104,7 @@ Gera agregações e métricas para o dashboard. Tabelas **externas** armazenadas
   - `execution_time_sec` — identifica gargalos por etapa
   - **O pipeline nunca falha por schema drift** — registra `WARN` e continua. Dados com colunas obrigatórias ausentes são marcados como `rejected_records`.
 - **Rastreabilidade end-to-end:** `run_id` (UUID) e `batch_id` (timestamp) gerados no `00_bronze_orchestrator` e propagados via `dbutils.jobs.taskValues` para todos os notebooks downstream.
-- **Dashboard de Observabilidade:** página dedicada no dashboard AI/BI com KPIs de execução, schema drift, registros rejeitados e tempo por etapa (fonte `monitoring.data_quality_log`).
+- **Dashboard de Observabilidade:** dashboard AI/BI separado com KPIs de execução, schema drift, registros rejeitados e tempo por etapa (fonte `monitoring.data_quality_log`).
 - **Alertas:** notificações por email configuradas no Databricks Workflow para falhas (`ALERT_EMAIL`).
 - **Lineage:** o Unity Catalog captura automaticamente lineage de leitura/escrita. Visualize em **Catalog > Tables > Lineage** nas tabelas Silver e Gold.
 

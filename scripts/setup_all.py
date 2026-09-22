@@ -736,23 +736,21 @@ def step_create_workflow(state):
     mark_completed(state, "create_workflow")
 
 
-def _patch_dashboard_catalog(host: str, token: str, dashboard_id: str, warehouse_id: str, catalog: str):
-    """Repatch the AI/BI dashboard injecting fully-qualified catalog.gold.table references."""
-    import re as _re
+def _patch_dashboard_queries(host: str, token: str, dashboard_id: str, warehouse_id: str,
+                             dash_file: Path, replacements: list[tuple[str, str]], label: str):
+    """Repatch an AI/BI dashboard injecting fully-qualified table references.
 
-    GOLD_TABLES = [
-        "kpi_summary", "finishers_by_year", "top_countries",
-        "age_gender_profile", "weather_impact", "times_distribution", "marathon_comparison",
-    ]
+    replacements is a list of (bare_name, fully_qualified_name) tuples.
+    """
+    import re as _re
 
     def _add_prefix(query: str) -> str:
         result = query
-        for tbl in GOLD_TABLES:
-            pattern = r'(?<![.\w])' + _re.escape(tbl) + r'(?![.\w])'
-            result = _re.sub(pattern, f"{catalog}.gold.{tbl}", result)
+        for bare, qualified in replacements:
+            pattern = r'(?<![.\w])' + _re.escape(bare) + r'(?![.\w])'
+            result = _re.sub(pattern, qualified, result)
         return result
 
-    dash_file = PROJECT_ROOT / "dashboard" / "databricks" / "marathon_dashboard.lvdash.json"
     dash = json.loads(dash_file.read_text(encoding="utf-8"))
     for ds in dash.get("datasets", []):
         ds["queryLines"] = [_add_prefix(q) for q in ds.get("queryLines", [])]
@@ -776,7 +774,7 @@ def _patch_dashboard_catalog(host: str, token: str, dashboard_id: str, warehouse
         timeout=30,
     )
     resp2.raise_for_status()
-    print_ok(f"Dashboard repatched com prefixo '{catalog}.gold'")
+    print_ok(f"{label} repatchado com prefixos de catalogo")
 
 
 def step_create_dashboard(state):
@@ -806,6 +804,8 @@ def step_create_dashboard(state):
     http_path = outputs["sql_warehouse_http_path"]["value"]
     dashboard_id = outputs["dashboard_id"]["value"]
     dashboard_url = f"{host}/dashboardsv3/{dashboard_id}/published"
+    obs_dashboard_id = outputs.get("observability_dashboard_id", {}).get("value")
+    obs_dashboard_url = f"{host}/dashboardsv3/{obs_dashboard_id}/published" if obs_dashboard_id else None
 
     os.environ["DATABRICKS_HTTP_PATH"] = http_path
     update_env_file(["DATABRICKS_HTTP_PATH"])
@@ -814,17 +814,41 @@ def step_create_dashboard(state):
         "sql_warehouse_http_path": http_path,
         "dashboard_id": dashboard_id,
         "dashboard_url": dashboard_url,
+        "observability_dashboard_id": obs_dashboard_id,
+        "observability_dashboard_url": obs_dashboard_url,
     })
     save_state(state)
     print_ok(f"SQL Warehouse: {warehouse_id}")
     print_ok(f"Dashboard publicado: {dashboard_url}")
+    if obs_dashboard_url:
+        print_ok(f"Dashboard de observabilidade publicado: {obs_dashboard_url}")
 
-    # Repatch the dashboard via API to inject fully-qualified catalog.schema.table
-    # references in all dataset queries. This ensures the dashboard works even
+    # Repatch dashboards via API to inject fully-qualified catalog.schema.table
+    # references in all dataset queries. This ensures dashboards work even
     # when the Terraform dataset_catalog context is lost (e.g. after API-only updates).
     catalog_name = os.environ.get("CATALOG_NAME", "marathon")
-    print_ok(f"Injetando prefixo de catalogo '{catalog_name}.gold' nas queries do dashboard...")
-    _patch_dashboard_catalog(host, token, dashboard_id, warehouse_id, catalog_name)
+    dash_dir = PROJECT_ROOT / "dashboard" / "databricks"
+
+    print_ok(f"Injetando prefixo de catalogo '{catalog_name}.gold' no dashboard principal...")
+    gold_tables = [
+        "kpi_summary", "finishers_by_year", "top_countries",
+        "age_gender_profile", "weather_impact", "times_distribution", "marathon_comparison",
+    ]
+    _patch_dashboard_queries(
+        host, token, dashboard_id, warehouse_id,
+        dash_dir / "marathon_dashboard.lvdash.json",
+        [(tbl, f"{catalog_name}.gold.{tbl}") for tbl in gold_tables],
+        "Dashboard principal",
+    )
+
+    if obs_dashboard_id:
+        print_ok(f"Injetando prefixo de catalogo '{catalog_name}.monitoring' no dashboard de observabilidade...")
+        _patch_dashboard_queries(
+            host, token, obs_dashboard_id, warehouse_id,
+            dash_dir / "observability_dashboard.lvdash.json",
+            [("data_quality_log", f"{catalog_name}.monitoring.data_quality_log")],
+            "Dashboard de observabilidade",
+        )
 
     mark_completed(state, "create_dashboard")
 
@@ -872,6 +896,8 @@ def main():
     print_info("Ou acesse Workflows no Databricks e rode o job manualmente.")
     if state["outputs"].get("dashboard_url"):
         print_info(f"Dashboard AI/BI: {state['outputs']['dashboard_url']}")
+    if state["outputs"].get("observability_dashboard_url"):
+        print_info(f"Dashboard Observabilidade: {state['outputs']['observability_dashboard_url']}")
 
 
 if __name__ == "__main__":

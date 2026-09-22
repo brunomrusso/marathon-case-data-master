@@ -36,6 +36,16 @@ resource "databricks_dashboard" "marathon" {
   dataset_schema    = "gold"
 }
 
+resource "databricks_dashboard" "observability" {
+  display_name      = "Marathon Observability"
+  warehouse_id      = databricks_sql_endpoint.dashboard.id
+  file_path         = "${path.module}/../../../dashboard/databricks/observability_dashboard.lvdash.json"
+  embed_credentials = true
+  parent_path       = "/Shared/marathon-case"
+  dataset_catalog   = var.catalog_name
+  dataset_schema    = "monitoring"
+}
+
 resource "databricks_permissions" "warehouse_usage" {
   sql_endpoint_id = databricks_sql_endpoint.dashboard.id
 
@@ -54,6 +64,15 @@ resource "databricks_permissions" "dashboard_usage" {
   }
 }
 
+resource "databricks_permissions" "observability_dashboard_usage" {
+  dashboard_id = databricks_dashboard.observability.id
+
+  access_control {
+    group_name       = "users"
+    permission_level = "CAN_RUN"
+  }
+}
+
 output "sql_warehouse_id" {
   value = databricks_sql_endpoint.dashboard.id
 }
@@ -64,4 +83,8 @@ output "sql_warehouse_http_path" {
 
 output "dashboard_id" {
   value = databricks_dashboard.marathon.id
+}
+
+output "observability_dashboard_id" {
+  value = databricks_dashboard.observability.id
 }

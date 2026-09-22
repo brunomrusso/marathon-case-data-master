@@ -29,6 +29,7 @@ jobs:
         run: |
           python -m compileall -q scripts dashboard src
           python -m json.tool dashboard/databricks/marathon_dashboard.lvdash.json > /dev/null
+          python -m json.tool dashboard/databricks/observability_dashboard.lvdash.json > /dev/null
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd

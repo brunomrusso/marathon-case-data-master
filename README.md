@@ -252,15 +252,16 @@ O dashboard oficial do case é versionado em `dashboard/databricks/marathon_dash
 O Terraform em `infrastructure/terraform/databricks/` cria:
 
 - SQL Warehouse Serverless `2X-Small`, Photon habilitado, cluster único e **auto-stop de 1 minuto** para reduzir custos;
-- dashboard publicado em `/Shared/marathon-case`;
+- **Dashboard principal** publicado em `/Shared/marathon-case`;
+- **Dashboard de observabilidade** publicado em `/Shared/marathon-case` (fonte `monitoring.data_quality_log`);
 - pipeline CI desliga o SQL Warehouse após a execução;
-- outputs do warehouse, HTTP Path e ID do dashboard.
+- outputs dos warehouses, HTTP Path e IDs dos dashboards.
 
-Após o Terraform, o `setup_all.py` repatcheia o dashboard via API injetando os prefixos `{catalog}.gold.` explicitamente em todas as queries de dataset. Isso garante que o dashboard funcione corretamente independentemente do catálogo padrão do workspace (necessário porque o `PATCH /api/2.0/lakeview/dashboards/{id}` não preserva o `dataset_catalog` configurado pelo Terraform). Para CI usa `marathon_prod.gold.*`; para local usa `marathon.gold.*`.
+Após o Terraform, o `setup_all.py` repatcheia ambos os dashboards via API injetando os prefixos `{catalog}.gold.` e `{catalog}.monitoring.` explicitamente em todas as queries de dataset. Isso garante que os dashboards funcionem corretamente independentemente do catálogo padrão do workspace. Para CI usa `marathon_prod.gold.*`/`marathon_prod.monitoring.*`; para local usa `marathon.gold.*`/`marathon.monitoring.*`.
 
 O setup usa `no_wait=true`: não bloqueia esperando o compute iniciar e imprime a URL publicada ao final. Na primeira consulta, o warehouse pode permanecer em `STARTING` enquanto a Azure provisiona o cluster.
 
-**Páginas do dashboard:**
+**Páginas do dashboard principal:**
 
 | Página | Conteúdo |
 |---|---|
@@ -274,7 +275,7 @@ O setup usa `no_wait=true`: não bloqueia esperando o compute iniciar e imprime 
 | Clima e performance | Correlação temperatura/precipitação × tempo médio por edição |
 | Observabilidade | KPIs de qualidade: execuções, schema drift, rejeitados, tempo por etapa |
 
-As sete tabelas de `marathon.gold` consumidas são: `kpi_summary`, `finishers_by_year`, `top_countries`, `age_gender_profile`, `weather_impact`, `times_distribution` e `marathon_comparison`.
+As sete tabelas de `marathon.gold` consumidas pelo dashboard principal são: `kpi_summary`, `finishers_by_year`, `top_countries`, `age_gender_profile`, `weather_impact`, `times_distribution` e `marathon_comparison`.
 
 > **Re-deploy manual do dashboard:** se precisar reaplicar a definição JSON sem rodar o setup completo:
 > ```powershell
