@@ -763,7 +763,7 @@ def _patch_dashboard_queries(host: str, token: str, dashboard_id: str, warehouse
         f"{host}/api/2.0/lakeview/dashboards/{dashboard_id}",
         headers=hdrs,
         json={"serialized_dashboard": serialized},
-        timeout=30,
+        timeout=120,
     )
     resp.raise_for_status()
 
@@ -771,7 +771,7 @@ def _patch_dashboard_queries(host: str, token: str, dashboard_id: str, warehouse
         f"{host}/api/2.0/lakeview/dashboards/{dashboard_id}/published",
         headers=hdrs,
         json={"warehouse_id": warehouse_id, "embed_credentials": True},
-        timeout=30,
+        timeout=120,
     )
     resp2.raise_for_status()
     print_ok(f"{label} repatchado com prefixos de catalogo")
