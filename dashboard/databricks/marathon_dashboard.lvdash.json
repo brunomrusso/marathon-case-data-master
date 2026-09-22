@@ -155,7 +155,7 @@
               {
                 "name": "q_country_source",
                 "query": {
-                  "datasetName": "country_performance",
+                  "datasetName": "top_countries",
                   "fields": [
                     {
                       "name": "source",
@@ -306,7 +306,7 @@
               {
                 "name": "q_country_year",
                 "query": {
-                  "datasetName": "country_performance",
+                  "datasetName": "top_countries",
                   "fields": [
                     {
                       "name": "year",

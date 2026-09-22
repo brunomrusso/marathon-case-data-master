@@ -12,6 +12,7 @@ d = json.loads(DASH.read_text(encoding="utf-8"))
 # New dataset: pre-aggregate by country with weighted avg time in HH:MM
 # Uses SUM(athletes * time_sec) / SUM(athletes) for correct weighted average
 new_query = (
+    "SELECT country, total_athletes, avg_finish_time_hm, avg_finish_time_min FROM ("
     "SELECT country, "
     "SUM(total_athletes) AS total_athletes, "
     "CONCAT("
@@ -19,8 +20,8 @@ new_query = (
     "  LPAD(CAST(FLOOR(PMOD(SUM(total_athletes * avg_finish_time_sec) / SUM(total_athletes), 3600) / 60) AS STRING), 2, '0')"
     ") AS avg_finish_time_hm, "
     "CAST(SUM(total_athletes * avg_finish_time_sec) / SUM(total_athletes) / 60 AS DECIMAL(6,1)) AS avg_finish_time_min "
-    "FROM top_countries WHERE country IS NOT NULL GROUP BY country HAVING SUM(total_athletes) >= 1000 "
-    "ORDER BY avg_finish_time_min ASC"
+    "FROM top_countries WHERE country IS NOT NULL GROUP BY country HAVING SUM(total_athletes) >= 1000"
+    ") ORDER BY avg_finish_time_min ASC"
 )
 
 for ds in d["datasets"]:

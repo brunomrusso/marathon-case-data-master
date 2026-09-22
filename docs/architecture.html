@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arquitetura — Marathon Data Engineering Case</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/devicons/devicon@latest/devicon.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <style>
+        :root {
+            --bg: #0d1117;
+            --card: #161b22;
+            --border: #30363d;
+            --text: #c9d1d9;
+            --muted: #8b949e;
+            --accent: #58a6ff;
+            --green: #3fb950;
+            --orange: #d29922;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+        }
+        header {
+            padding: 3rem 1rem 2rem;
+            text-align: center;
+            border-bottom: 1px solid var(--border);
+        }
+        header h1 { margin: 0; font-size: 2.2rem; color: #fff; }
+        header p { color: var(--muted); max-width: 700px; margin: 1rem auto 0; }
+        main { max-width: 1100px; margin: 0 auto; padding: 2rem 1rem; }
+        h2 { color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: .5rem; margin-top: 2.5rem; }
+        h3 { color: #fff; margin-top: 1.8rem; }
+        .tech-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 1rem;
+            margin: 1.5rem 0;
+        }
+        .tech-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1rem;
+            text-align: center;
+            transition: transform .15s;
+        }
+        .tech-card:hover { transform: translateY(-3px); border-color: var(--accent); }
+        .tech-card i { font-size: 2.5rem; margin-bottom: .6rem; display: block; }
+        .tech-card span { font-size: .9rem; color: #fff; }
+        .layer {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.2rem 1.5rem;
+            margin: 1rem 0;
+        }
+        .layer h3 { margin-top: 0; color: var(--orange); }
+        .layer ul { margin: .5rem 0 0; padding-left: 1.2rem; }
+        .layer li { margin-bottom: .4rem; }
+        .mermaid { background: #ffffff; border-radius: 12px; padding: 1rem; margin: 1.5rem 0; }
+        table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+        th, td { border: 1px solid var(--border); padding: .7rem; text-align: left; }
+        th { background: var(--card); color: var(--accent); }
+        code {
+            background: #21262d;
+            padding: .15rem .4rem;
+            border-radius: 4px;
+            font-family: "SFMono-Regular", Consolas, monospace;
+            color: #fff;
+        }
+        .flow-box {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: .8rem;
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1rem 1.5rem;
+            margin: 1rem 0;
+        }
+        .flow-box span { background: #21262d; padding: .4rem .8rem; border-radius: 6px; }
+        .flow-box .arrow { color: var(--green); font-weight: bold; }
+        footer { text-align: center; color: var(--muted); padding: 3rem 1rem; border-top: 1px solid var(--border); }
+        @media print {
+            body { background: #fff; color: #000; }
+            .layer, .tech-card { background: #f6f8fa; border-color: #d0d7de; }
+            h2 { color: #0969da; border-color: #d0d7de; }
+            code { background: #eaeef2; color: #000; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Arquitetura — Marathon Data Engineering Case</h1>
+        <p>Case completo de Engenharia de Dados em português: ingestão event-driven com Databricks Auto Loader, arquitetura medalhão Raw → Bronze → Silver → Gold, governança no Unity Catalog e dashboard AI/BI.</p>
+    </header>
+
+    <main>
+        <section>
+            <h2>Tecnologias Utilizadas</h2>
+            <div class="tech-grid">
+                <div class="tech-card"><i class="devicon-azure-plain colored"></i><span>Azure</span></div>
+                <div class="tech-card"><i class="devicon-terraform-plain colored"></i><span>Terraform</span></div>
+                <div class="tech-card"><i class="devicon-github-original colored"></i><span>GitHub Actions</span></div>
+                <div class="tech-card"><i class="devicon-python-plain colored"></i><span>Python / PySpark</span></div>
+                <div class="tech-card"><i class="devicon-apachespark-plain colored"></i><span>Apache Spark</span></div>
+                <div class="tech-card"><i class="devicon-postgresql-plain colored"></i><span>Delta Lake</span></div>
+                <div class="tech-card"><i class="devicon-html5-plain colored"></i><span>Databricks Workflows</span></div>
+                <div class="tech-card"><i class="devicon-docker-plain colored"></i><span>Unity Catalog</span></div>
+            </div>
+            <p style="color:var(--muted);font-size:.9rem;">Ícones via <a href="https://devicon.dev" target="_blank" style="color:var(--accent);">Devicon</a>. Alguns serviços (Databricks, Unity Catalog, Auto Loader) usam representações próximas por não possuírem ícones oficiais no Devicon.</p>
+        </section>
+
+        <section>
+            <h2>Visão Geral da Arquitetura</h2>
+            <div class="mermaid">
+flowchart LR
+    subgraph Fontes["Fontes de Dados"]
+        A[CSVs de Resultados<br/>Berlin / Chicago / London / NYC]
+        B[CSV de Metadados]
+        C[Open-Meteo API]
+    end
+
+    subgraph Azure["Azure Cloud"]
+        D[ADLS Gen2<br/>raw/berlin/<br/>raw/chicago/<br/>raw/london/<br/>raw/nyc/<br/>raw/metadata/]
+        E[EventGrid]
+    end
+
+    subgraph Databricks["Databricks"]
+        F["File Arrival Trigger"]
+        G["Workflow"]
+        H["Auto Loader<br/>cloudFiles"]
+        I[(Bronze Delta)]
+        J[(Silver Delta)]
+        K[(Gold Delta)]
+        L["AI/BI Dashboard"]
+    end
+
+    A -->|upload_raw_data.py| D
+    B -->|upload_raw_data.py| D
+    D -->|novo arquivo| E
+    E --> F
+    F --> G
+    G --> H
+    H --> I
+    I --> J
+    J --> K
+    C -->|weather_enrichment| J
+    K --> L
+            </div>
+        </section>
+
+        <section>
+            <h2>Camadas Medalhão</h2>
+            <div class="layer">
+                <h3>Raw (Landing)</h3>
+                <ul>
+                    <li>Armazenamento em <code>abfss://marathon-data@&lt;storage&gt;.dfs.core.windows.net/raw/</code></li>
+                    <li>Subpastas por fonte: <code>raw/berlin/</code>, <code>raw/chicago/</code>, <code>raw/london/</code>, <code>raw/nyc/</code>, <code>raw/metadata/</code></li>
+                    <li>Sem transformação; formato original dos CSVs</li>
+                    <li>JSONs brutos da API Open-Meteo em <code>raw/weather_api/</code></li>
+                </ul>
+            </div>
+            <div class="layer">
+                <h3>Bronze</h3>
+                <ul>
+                    <li>Ingestão via <strong>Databricks Auto Loader</strong> (<code>cloudFiles</code>) — uma stream por subpasta</li>
+                    <li>Checkpoint e schema inferido por fonte</li>
+                    <li>Deduplicação por <code>row_hash</code> + <code>source</code> + <code>year</code> via Delta <code>MERGE</code></li>
+                    <li>Tabelas externas: <code>bronze.berlin</code>, <code>bronze.chicago</code>, <code>bronze.london</code>, <code>bronze.nyc</code></li>
+                </ul>
+            </div>
+            <div class="layer">
+                <h3>Silver</h3>
+                <ul>
+                    <li>Normalização de schema, padronização de nomes e tipos</li>
+                    <li>Integração das quatro fontes em <code>silver.marathons</code></li>
+                    <li>Mascaramento de dados sensíveis (nomes e identificadores via SHA-256) — orientação LGPD</li>
+                    <li>Validação de qualidade e registro em <code>monitoring.data_quality_log</code></li>
+                </ul>
+            </div>
+            <div class="layer">
+                <h3>Gold</h3>
+                <ul>
+                    <li>Agregações prontas para análise e dashboard</li>
+                    <li>Tabelas: <code>gold.kpi_summary</code>, <code>gold.top_countries</code>, <code>gold.weather_impact</code>, <code>gold.athletes_by_country</code>, etc.</li>
+                    <li>Enriquecimento climático via Open-Meteo em <code>gold.weather_impact</code></li>
+                </ul>
+            </div>
+        </section>
+
+        <section>
+            <h2>Fluxo de Ingestão Event-Driven</h2>
+            <div class="flow-box">
+                <span>Novo CSV em <code>raw/&lt;fonte&gt;/</code></span>
+                <span class="arrow">→</span>
+                <span>EventGrid detecta</span>
+                <span class="arrow">→</span>
+                <span>File Arrival Trigger</span>
+                <span class="arrow">→</span>
+                <span>Workflow Databricks</span>
+                <span class="arrow">→</span>
+                <span>Auto Loader micro-batch</span>
+                <span class="arrow">→</span>
+                <span>Delta MERGE</span>
+            </div>
+            <p>O <strong>Auto Loader</strong> processa apenas arquivos ainda não vistos (checkpoint), enquanto o <strong>MERGE</strong> do Delta Lake garante idempotência: reexecutar o pipeline não gera duplicatas.</p>
+        </section>
+
+        <section>
+            <h2>Pipeline Completo</h2>
+            <div class="mermaid">
+flowchart TB
+    subgraph Bronze["Bronze"]
+        B1[Auto Loader berlin]
+        B2[Auto Loader chicago]
+        B3[Auto Loader london]
+        B4[Auto Loader nyc]
+    end
+
+    subgraph Silver["Silver"]
+        S1[silver.marathons]
+        S2[bronze.marathon_metadata]
+        S3[bronze.weather_raw]
+        S4[silver.marathons_with_weather]
+    end
+
+    subgraph Gold["Gold"]
+        G1[kpi_summary]
+        G2[top_countries]
+        G3[weather_impact]
+        G4[age_gender_profile]
+        G5[marathon_comparison]
+    end
+
+    B1 --> S1
+    B2 --> S1
+    B3 --> S1
+    B4 --> S1
+    S2 --> S4
+    S3 --> S4
+    S1 --> S4
+    S1 --> G1
+    S1 --> G2
+    S1 --> G4
+    S4 --> G3
+    G1 --> DASH[AI/BI Dashboard]
+    G2 --> DASH
+    G3 --> DASH
+    G4 --> DASH
+    G5 --> DASH
+            </div>
+        </section>
+
+        <section>
+            <h2>Governança e Segurança</h2>
+            <table>
+                <tr><th>Aspecto</th><th>Implementação</th></tr>
+                <tr><td>Catálogo</td><td>Unity Catalog (<code>marathon</code> / <code>marathon_prod</code>)</td></tr>
+                <tr><td>Acesso ao ADLS</td><td>Azure Access Connector + Managed Identity + RBAC</td></tr>
+                <tr><td>Autenticação local</td><td><code>az login</code> (Microsoft Entra ID)</td></tr>
+                <tr><td>Autenticação CI</td><td>GitHub OIDC federado → Azure</td></tr>
+                <tr><td>Segredos</td><td>Nenhuma chave estática; Databricks secrets guardam apenas configuração</td></tr>
+                <tr><td>LGPD</td><td>Hash SHA-256 de nomes/identificadores na Silver</td></tr>
+                <tr><td>Observabilidade</td><td><code>monitoring.data_quality_log</code> com row counts, % nulos, schema drift e tempo de execução</td></tr>
+                <tr><td>Lineage</td><td>Capturado automaticamente pelo Unity Catalog</td></tr>
+            </table>
+        </section>
+
+        <section>
+            <h2>Repositório e Deploy</h2>
+            <p>O deploy é feito em um comando:</p>
+            <pre style="background:#21262d;padding:1rem;border-radius:8px;overflow:auto;"><code>python scripts/setup_all.py</code></pre>
+            <p>Para CI/CD, o workflow <code>.github/workflows/release-deploy.yml</code> provisiona a infraestrutura, sobe os dados, implanta notebooks, cria o workflow e publica o dashboard.</p>
+        </section>
+    </main>
+
+    <footer>
+        <p>Documentação gerada para o case de Engenharia de Dados — Marathon Results.</p>
+    </footer>
+
+    <script>
+        mermaid.initialize({ startOnLoad: true, theme: 'default' });
+    </script>
+</body>
+</html>
