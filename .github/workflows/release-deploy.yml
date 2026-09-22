@@ -75,3 +75,7 @@ jobs:
 
       - name: Run data pipeline
         run: python scripts/run_databricks_workflow.py
+
+      - name: Stop SQL warehouse to avoid idle costs
+        run: python scripts/stop_databricks_warehouse.py
+        continue-on-error: true

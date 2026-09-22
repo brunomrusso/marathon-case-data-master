@@ -251,8 +251,9 @@ O dashboard oficial do case é versionado em `dashboard/databricks/marathon_dash
 
 O Terraform em `infrastructure/terraform/databricks/` cria:
 
-- SQL Warehouse Serverless `2X-Small`, Photon habilitado, cluster único e auto-stop de 10 minutos;
+- SQL Warehouse Serverless `2X-Small`, Photon habilitado, cluster único e **auto-stop de 1 minuto** para reduzir custos;
 - dashboard publicado em `/Shared/marathon-case`;
+- pipeline CI desliga o SQL Warehouse após a execução;
 - outputs do warehouse, HTTP Path e ID do dashboard.
 
 Após o Terraform, o `setup_all.py` repatcheia o dashboard via API injetando os prefixos `{catalog}.gold.` explicitamente em todas as queries de dataset. Isso garante que o dashboard funcione corretamente independentemente do catálogo padrão do workspace (necessário porque o `PATCH /api/2.0/lakeview/dashboards/{id}` não preserva o `dataset_catalog` configurado pelo Terraform). Para CI usa `marathon_prod.gold.*`; para local usa `marathon.gold.*`.

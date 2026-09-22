@@ -94,6 +94,7 @@ Gera agregações e métricas para o dashboard. Tabelas **externas** armazenadas
 - **Job cluster single-node** `Standard_DS3_v2` para o case demonstrativo (autoscaling disponível alterando `scripts/create_databricks_workflow.py`).
 - **Delta Lake** com partições por `source` e `year` e `OPTIMIZE` + `ZORDER` para leitura eficiente.
 - Ingestão event-driven: cluster só liga quando arquivos chegam.
+- SQL Warehouse com **auto-stop de 1 minuto**; pipeline CI desliga o warehouse após execução para reduzir custos.
 - Ingestão de London otimizada com leitura em lote ao invés de uma chamada por arquivo.
 - **Observabilidade:** tabela `marathon.monitoring.data_quality_log` (append-only, `mergeSchema=true`) registra por step/notebook:
   - `row_count_in` / `row_count_out`
