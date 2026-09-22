@@ -158,9 +158,15 @@ AS
 SELECT * FROM {catalog_name}.silver.marathons_pii
 """)
 
-# Concede acesso às views (a tabela base continua restrita por padrão)
+# Concede acesso às views (a tabela base continua restrita por padrão).
+# Usamos 'account users' porque o grupo 'admins' pode nao existir como
+# principal em todos os workspaces. A view publica eh a porta de entrada
+# padrao; a view admin esta disponivel para o proprietario da tabela/job.
 spark.sql(f"GRANT SELECT ON TABLE {catalog_name}.silver.marathons_pii_public TO `account users`")
-spark.sql(f"GRANT SELECT ON TABLE {catalog_name}.silver.marathons_pii_admin TO `admins`")
+try:
+    spark.sql(f"GRANT SELECT ON TABLE {catalog_name}.silver.marathons_pii_admin TO `admins`")
+except Exception as e:
+    print(f"WARN: nao foi possivel conceder acesso a 'admins' (grupo inexistente neste workspace): {e}")
 
 # COMMAND ----------
 
