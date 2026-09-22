@@ -354,9 +354,10 @@ except Exception:
  .option("path", silver_path)
  .saveAsTable("silver.marathons"))
 
-# Otimização física: compacta arquivos pequenos e organiza por source/year
-spark.sql(f"OPTIMIZE {catalog_name}.silver.marathons ZORDER BY (source, year)")
-spark.sql(f"OPTIMIZE {catalog_name}.silver.marathons_pii ZORDER BY (source, year)")
+# Otimização física: compacta arquivos pequenos e melhora leitura por país
+# (source e year são colunas de partição, não podem ser usadas no ZORDER)
+spark.sql(f"OPTIMIZE {catalog_name}.silver.marathons ZORDER BY (country)")
+spark.sql(f"OPTIMIZE {catalog_name}.silver.marathons_pii ZORDER BY (country)")
 
 execution_time = time.time() - start_time
 

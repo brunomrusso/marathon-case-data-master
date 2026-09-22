@@ -171,7 +171,7 @@ kpi_summary = (silver
     )
     .withColumn("female_pct", spark_round(col("female_count") / col("total_athletes") * 100, 2)))
 
-save_gold(kpi_summary, "kpi_summary", ["source", "year"], zorder_cols=["source"])
+save_gold(kpi_summary, "kpi_summary", ["source", "year"])
 
 # COMMAND ----------
 
