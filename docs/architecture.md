@@ -32,7 +32,7 @@ Solução de Engenharia de Dados na Azure para processar e visualizar dados das 
 - Aplica mascaramento e anonimização de atletas.
 - Garante qualidade com regras de validação.
 - Tabela **externa** anonimizada `silver.marathons` armazenada em `abfss://.../silver/marathons`.
-- Tabela **externa** PII `silver.marathons_pii` contém `athlete_name`/`athlete_id` e é protegida por **column masks** e **row filters** do Unity Catalog.
+- Tabela **externa** PII `silver.marathons_pii` contém `athlete_name`/`athlete_id`. Como o job cluster é single-user, são criadas views `silver.marathons_pii_public` (mascarada) e `silver.marathons_pii_admin` (full). Em shared clusters, substituir por **column masks** e **row filters** nativos do Unity Catalog.
 - Tabela `bronze.marathon_metadata` — data, cidade, país, latitude e longitude de cada prova (gerada via heurística ou carregada de CSV).
 - Tabela `bronze.weather_raw` — cache dos dados de clima parseados a partir dos JSONs brutos em `raw/weather_api/`.
 - Tabela `silver.marathons_with_weather` enriquece os resultados com condições climáticas do dia da prova (temperatura, precipitação, vento).
@@ -52,7 +52,7 @@ Gera agregações e métricas para o dashboard. Tabelas **externas** armazenadas
 | `gold.marathon_comparison` | Comparativo direto entre as quatro maratonas: tempo médio, record, total e % feminino. |
 | `gold.age_gender_profile` | Perfil demográfico dos finishers: contagem e tempo médio por grupo etário e gênero. |
 | `gold.weather_impact` | Correlação entre condições climáticas e desempenho médio. Criada somente quando `silver.marathons_with_weather` estiver disponível. |
-| `silver.marathons_pii` | Tabela segura com dados pessoais; acessível via Unity Catalog column masks e row filters. |
+| `silver.marathons_pii` | Tabela segura com dados pessoais; consumida via views `marathons_pii_public` (mascarada) e `marathons_pii_admin` (full). |
 
 ### Monitoring
 
@@ -75,14 +75,14 @@ Gera agregações e métricas para o dashboard. Tabelas **externas** armazenadas
    - Cria `silver.marathons_with_weather` com join por `source + year`.
    - Registra métricas em `monitoring.data_quality_log`.
 7. `03_gold_aggregations` gera todas as tabelas Gold, aplica `OPTIMIZE` + `ZORDER` e registra métricas. Usa `silver.marathons_with_weather` quando disponível; cai para `silver.marathons` caso contrário.
-8. `05_governance_security` aplica **column masks** e **row filters** do Unity Catalog em `silver.marathons_pii`.
+8. `05_governance_security` cria views mascaradas (`marathons_pii_public`) e administrativa (`marathons_pii_admin`) sobre `silver.marathons_pii`.
 9. O dashboard consome as tabelas Gold e a página de **Observabilidade** consome `monitoring.data_quality_log`.
 
 ## Governança e Segurança
 
 - Todas as tabelas são registradas no **Unity Catalog** (`marathon.bronze.*`, `marathon.silver.*`, `marathon.gold.*`, `marathon.monitoring.*`).
 - Dados sensíveis (nomes e identificadores de atletas) anonimizados na `silver.marathons` via hash SHA-256.
-- A tabela `silver.marathons_pii` mantém os campos pessoais originais e é protegida por **column masks** e **row filters** do Unity Catalog (`is_member('admins')` vê valor real; outros veem `***`).
+- A tabela `silver.marathons_pii` mantém os campos pessoais originais. No cluster single-user do case, são criadas views `marathons_pii_public` (mascarada) e `marathons_pii_admin` (full). Em produção com shared cluster, a boa prática é usar **column masks** e **row filters** nativos do Unity Catalog.
 - Acesso ao ADLS via **Azure Access Connector** e managed identity.
 - Criptografia em trânsito e em repouso do ADLS Gen2.
 - Controle de acesso via RBAC do Azure e permissões do Unity Catalog.

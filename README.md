@@ -197,7 +197,7 @@ O workflow executa em sequência:
 3. **02_silver_etl** — gera a tabela `silver.marathons` e loga qualidade (registros inválidos, % nulos, schema drift).
 4. **04_weather_enrichment** — enriquece a Silver com dados climáticos do dia da prova (temperatura, precipitação, vento) via API pública Open-Meteo. Salva o JSON bruto da API em `raw/weather_api/` (padrão raw landing), gera `bronze.marathon_metadata`, `bronze.weather_raw` e `silver.marathons_with_weather`. Também loga API failures e cache.
 5. **03_gold_aggregations** — gera as tabelas `gold.*` para o dashboard, incluindo `gold.weather_impact`, aplica `OPTIMIZE` + `ZORDER` e loga agregações e schema drift.
-6. **05_governance_security** — aplica **column masks** e **row filters** do Unity Catalog na tabela `silver.marathons_pii` (campos `athlete_name` e `athlete_id`).
+6. **05_governance_security** — cria views `silver.marathons_pii_public` e `silver.marathons_pii_admin` sobre a tabela `silver.marathons_pii`. A view pública mascara `athlete_name`/`athlete_id` com `***` e filtra anos ≥ 2014 para não-admins. Em produção com shared cluster, substituir por **column masks** e **row filters** nativos do Unity Catalog.
 
 > O workflow roda em um **single-node job cluster** `Standard_DS3_v2` para o case demonstrativo. O cluster pode ser trocado para autoscaling editando `scripts/create_databricks_workflow.py` quando houver ambientes de worker disponíveis na assinatura.
 
@@ -219,7 +219,7 @@ Todas as tabelas Gold ficam em `marathon.gold.*` e são o ponto de consumo do da
 | `gold.marathon_comparison` | Comparativo direto entre as quatro maratonas por ano: finishers e tempo médio de cada uma. |
 | `gold.age_gender_profile` | Perfil demográfico: contagem e tempo médio por faixa etária, gênero, fonte e ano. |
 | `gold.weather_impact` | Correlação entre temperatura, precipitação, vento e desempenho médio. Disponível somente quando `silver.marathons_with_weather` está populada. |
-| `silver.marathons_pii` | Tabela segura com dados pessoais; acessível via Unity Catalog column masks e row filters. |
+| `silver.marathons_pii` | Tabela segura com dados pessoais; consumida via views `marathons_pii_public` (mascarada) e `marathons_pii_admin` (full). |
 
 ### 12.1 Qualidade e Schema Drift
 

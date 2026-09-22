@@ -1,13 +1,15 @@
 # Databricks notebook source
 
 # MAGIC %md
-# MAGIC # Governance & Security — Unity Catalog Masks
-# MAGIC Aplica mascaramento dinâmico de colunas (column masking) e filtro de linhas
-# MAGIC (row filter) no Unity Catalog para a tabela `silver.marathons_pii`,
-# MAGIC que contém dados pessoais (`athlete_name`, `athlete_id`).
+# MAGIC # Governance & Security — Visão Mascarada de Dados Pessoais
+# MAGIC A tabela `silver.marathons_pii` contém dados pessoais (`athlete_name`,
+# MAGIC `athlete_id`). Como o job cluster do case é single-user e o Unity Catalog
+# MAGIC só aplica column masks/row filters em shared clusters, criamos uma
+# MAGIC **view mascarada** `silver.marathons_pii_public` para consumo geral.
 # MAGIC
-# MAGIC Usuários sem privilégio `UNMASK` veem `***` nos campos sensíveis.
-# MAGIC Administradores (`admins`) e o proprietário do pipeline veem os dados reais.
+# MAGIC A view usa `is_member('admins')` para decidir se expõe o valor real ou `***`.
+# MAGIC Em produção, com shared cluster, a boa prática é usar column masks e row
+# filters nativos do Unity Catalog.
 
 # COMMAND ----------
 
@@ -122,50 +124,43 @@ def log_data_quality(
 
 # COMMAND ----------
 
-# Função de mascaramento dinâmico: somente membros do grupo/workspace "admins"
-# ou o proprietário do objeto veem o valor real; demais usuários veem "***".
+# View pública: campos pessoais ficam '***' para usuários comuns;
+# administradores (grupo 'admins') veem os valores reais.
+# Essa abordagem funciona em single-node clusters, onde column masks nativas
+# do Unity Catalog não são suportadas.
 spark.sql(f"""
-CREATE OR REPLACE FUNCTION {catalog_name}.governance.mask_pii(value STRING)
-RETURN CASE
-    WHEN is_member('admins') THEN value
-    ELSE '***'
-END
+CREATE OR REPLACE VIEW {catalog_name}.silver.marathons_pii_public
+AS
+SELECT
+    source,
+    year,
+    marathon_name,
+    CASE WHEN is_member('admins') THEN athlete_name ELSE '***' END AS athlete_name,
+    CASE WHEN is_member('admins') THEN athlete_id ELSE '***' END AS athlete_id,
+    gender,
+    age_group,
+    country,
+    finish_time,
+    finish_time_sec,
+    half_time,
+    half_time_sec,
+    place_overall,
+    place_gender,
+    club
+FROM {catalog_name}.silver.marathons_pii
+WHERE CASE WHEN is_member('admins') THEN TRUE ELSE year >= 2014 END
 """)
 
-# Filtro de linhas: restringe leitura a registros a partir de 2014 para
-# usuários que não sejam admins (exemplo didático de row-level security).
+# View administrativa: acesso completo a todos os registros e campos pessoais
 spark.sql(f"""
-CREATE OR REPLACE FUNCTION {catalog_name}.governance.row_filter_recent(year INT)
-RETURN CASE
-    WHEN is_member('admins') THEN TRUE
-    ELSE year >= 2014
-END
+CREATE OR REPLACE VIEW {catalog_name}.silver.marathons_pii_admin
+AS
+SELECT * FROM {catalog_name}.silver.marathons_pii
 """)
 
-# Aplica mascaramento à tabela PII
-spark.sql(f"""
-ALTER TABLE {catalog_name}.silver.marathons_pii
-ALTER COLUMN athlete_name SET MASK {catalog_name}.governance.mask_pii
-""")
-
-spark.sql(f"""
-ALTER TABLE {catalog_name}.silver.marathons_pii
-ALTER COLUMN athlete_id SET MASK {catalog_name}.governance.mask_pii
-""")
-
-# Aplica filtro de linhas à tabela PII
-spark.sql(f"""
-ALTER TABLE {catalog_name}.silver.marathons_pii
-SET ROW FILTER {catalog_name}.governance.row_filter_recent ON (year)
-""")
-
-# Concede acesso de leitura no schema governance para account users
-spark.sql(f"GRANT USAGE ON SCHEMA {catalog_name}.governance TO `account users`")
-spark.sql(f"GRANT EXECUTE ON FUNCTION {catalog_name}.governance.mask_pii TO `account users`")
-spark.sql(f"GRANT EXECUTE ON FUNCTION {catalog_name}.governance.row_filter_recent TO `account users`")
-
-# Garante que account users possam ler a tabela PII (máscara será aplicada automaticamente)
-spark.sql(f"GRANT SELECT ON TABLE {catalog_name}.silver.marathons_pii TO `account users`")
+# Concede acesso às views (a tabela base continua restrita por padrão)
+spark.sql(f"GRANT SELECT ON TABLE {catalog_name}.silver.marathons_pii_public TO `account users`")
+spark.sql(f"GRANT SELECT ON TABLE {catalog_name}.silver.marathons_pii_admin TO `admins`")
 
 # COMMAND ----------
 
@@ -174,12 +169,12 @@ execution_time = time.time() - start_time
 
 log_data_quality(
     layer="governance",
-    step="unity_catalog_masks",
+    step="masked_pii_views",
     row_count_in=pii_count,
     row_count_out=pii_count,
     execution_time_sec=round(execution_time, 2),
     status="PASS",
-    details="Column masks aplicados a athlete_name/athlete_id; row filter year>=2014 para nao-admins em silver.marathons_pii",
+    details="Views silver.marathons_pii_public (masked) e silver.marathons_pii_admin (full) criadas. Em shared clusters, substituir por column masks/row filters nativos do Unity Catalog.",
 )
 
-print(f"Governança aplicada: {pii_count} registros em silver.marathons_pii com masks e row filter.")
+print(f"Governança aplicada: {pii_count} registros em silver.marathons_pii; views public/admin criadas.")
