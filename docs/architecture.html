@@ -36,12 +36,14 @@
         h2 { color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: .5rem; margin-top: 2.5rem; }
         h3 { color: #fff; margin-top: 1.8rem; }
         .tech-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
             gap: 1rem;
             margin: 1.5rem 0;
         }
         .tech-card {
+            flex: 0 1 140px;
             background: var(--card);
             border: 1px solid var(--border);
             border-radius: 12px;
