@@ -4,6 +4,18 @@
 
 Desenvolver uma solução completa de Engenharia de Dados para ingerir, processar, armazenar e visualizar dados de resultados de maratonas. A solução demonstra extração, ingestão batch, arquitetura medalhão (Bronze/Silver/Gold), observabilidade, segurança, mascaramento de dados sensíveis, escalabilidade, governança via Unity Catalog e reprodutibilidade.
 
+## I.1 Descritivo em Linguagem de Negócio
+
+Este case simula o projeto de um analista de dados esportivos que precisa responder perguntas comuns de negócio:
+
+- **Participação:** quantos atletas completam cada maratona, por edição e por país.
+- **Performance:** qual maratona tem os tempos mais rápidos/lentos e qual país tem melhor desempenho médio.
+- **Contexto climático:** como temperatura, precipitação e vento afetam os resultados.
+- **Qualidade de dados:** quais etapas da pipeline executam, quantos registros são rejeitados, se há drift de schema.
+- **Governança:** quais dados são sensíveis (nomes de atletas) e quem pode vê-los.
+
+A solução implementa um pipeline end-to-end que, na prática, é o equivalente a um **data product** usado por uma empresa de análise esportiva ou por um jornal especializado em corridas.
+
 ## II. Arquitetura
 
 ### Tecnologias
@@ -13,7 +25,7 @@ Desenvolver uma solução completa de Engenharia de Dados para ingerir, processa
 - **Orquestração:** Databricks Workflows
 - **Ingestão:** File Arrival Trigger no Databricks Workflow + Auto Loader `cloudFiles`
 - **Governança:** Unity Catalog, External Locations, Managed Identities, **column masks** e **row filters** nativos
-- **Observabilidade:** Databricks Job Metrics + tabela `monitoring.data_quality_log` + página de **Observabilidade** no dashboard AI/BI
+- **Observabilidade:** Databricks Job Metrics + tabela `monitoring.data_quality_log` + **dashboard de Observabilidade** separado no AI/BI
 - **Segurança:** OIDC, RBAC, criptografia, mascaramento e Access Connector
 - **Dashboard:** Databricks AI/BI provisionado por Terraform; Streamlit opcional para consumo externo
 
@@ -46,8 +58,10 @@ CSV local ──► ADLS raw/<fonte>/ ──► File Arrival Trigger ──► 0
                                     03_gold_aggregations ──► gold.* + monitoring.data_quality_log
                                               │
                                               ▼
-                                         Dashboard
+                                         Dashboards (AI/BI)
 ```
+
+> **Documentação visual detalhada:** para um diagrama completo com ícones e explicações passo a passo, abra `docs/architecture.html` no navegador ou leia `docs/architecture.md`.
 
 ## III. Fontes de Dados
 
@@ -64,24 +78,38 @@ Atenção: os nomes dos atletas são campos sensíveis. Na camada Silver eles s�
 
 ### 1. Pré-requisitos
 
-Antes de começar, você precisa de:
+Antes de começar, instale as ferramentas abaixo:
 
-- Uma **conta Microsoft Azure** ativa com crédito ou faturamento habilitado.
-- Permissões para criar Resource Groups, Storage Accounts e Databricks Workspaces.
-- **Python 3.10+** instalado localmente.
-- **Azure CLI** instalado e logado (`az login`).
-- **Terraform 64-bit** instalado e no `PATH`: https://developer.hashicorp.com/terraform/install
-  - O provider Databricks não suporta Windows 32-bit (`windows_386`). No Windows, instale a versão AMD64; o setup também detecta instalações feitas pelo WinGet.
-- Acesso aos datasets listados acima.
-- Permissão de **Workspace Admin** no Databricks workspace que será criado.
+| Ferramenta | Download | Instalação rápida |
+|---|---|---|
+| **Azure account** | [portal.azure.com](https://portal.azure.com) | Uma conta Azure ativa com crédito ou faturamento habilitado |
+| **Python 3.10+** | [python.org/downloads](https://www.python.org/downloads/) | Windows: `winget install Python.Python.3.12` ou baixe o instalador; macOS: `brew install python@3.12`; Linux: `sudo apt install python3.12` |
+| **Azure CLI** | [learn.microsoft.com/cli/azure/install-azure-cli](https://learn.microsoft.com/cli/azure/install-azure-cli) | Windows: `winget install Microsoft.AzureCLI`; macOS: `brew install azure-cli`; Linux: `curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash` |
+| **Terraform 64-bit** | [developer.hashicorp.com/terraform/install](https://developer.hashicorp.com/terraform/install) | Windows: `winget install Hashicorp.Terraform`; macOS: `brew install terraform`; Linux: `sudo apt-get install terraform` (use [instruções oficiais](https://developer.hashicorp.com/terraform/install) para adicionar o repo) |
+| **Git** | [git-scm.com/downloads](https://git-scm.com/downloads) | Normalmente já instalado no Windows/macOS; Linux: `sudo apt install git` |
+
+**Permissões necessárias:**
+- Azure: criar Resource Groups, Storage Accounts e Databricks Workspaces
+- Databricks: **Workspace Admin** no workspace que será criado
+- Acesso aos datasets listados acima
 
 ### 2. Clonar e preparar o ambiente
 
+**Windows (PowerShell):**
 ```powershell
 git clone <URL_DO_REPOSITORIO>
 cd marathon-case-data-master
 python -m venv venv
 .\venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+**macOS/Linux (bash/zsh):**
+```bash
+git clone <URL_DO_REPOSITORIO>
+cd marathon-case-data-master
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
 ```
 
@@ -97,9 +125,12 @@ pip install -r requirements.txt
    - `data/raw/Berlin_Marathon_1999-2025_original.csv` → `raw/berlin/`
    - `data/raw/marathon_metadata.csv` → `raw/metadata/`
 
+> **Nota sobre arquivos grandes:** Berlin (~108 MB), Chicago (~114 MB) e NYC (~91 MB) excedem o limite de 100 MB do GitHub. Por isso não estão no repositório; use os links na seção III ou o seed privado do CI.
+
 ### 4. Inspecionar os dados localmente
 
-```powershell
+```bash
+# Windows (PowerShell) / macOS / Linux
 python scripts/inspect_raw_data.py
 ```
 
@@ -107,7 +138,11 @@ python scripts/inspect_raw_data.py
 
 Crie o arquivo `.env` a partir do exemplo:
 
-```powershell
+```bash
+# Windows (PowerShell)
+copy .env.example .env
+
+# macOS/Linux
 cp .env.example .env
 ```
 
@@ -122,7 +157,8 @@ DATABRICKS_WORKSPACE_ROOT=                               # opcional; padrao: /Wo
 
 Execute o setup unico:
 
-```powershell
+```bash
+# Windows (PowerShell) / macOS / Linux
 python scripts/setup_all.py
 ```
 
@@ -150,7 +186,8 @@ O upload para o ADLS usa `DefaultAzureCredential` e o RBAC `Storage Blob Data Co
 
 Se falhar em qualquer passo, basta corrigir o problema e rodar novamente:
 
-```powershell
+```bash
+# Windows (PowerShell) / macOS / Linux
 python scripts/setup_all.py
 ```
 
@@ -158,7 +195,8 @@ O script retoma de onde parou, pois salva o progresso em `.setup_state.json`.
 
 Para recomecar do zero (não apaga a infraestrutura, apenas o estado do setup):
 
-```powershell
+```bash
+# Windows (PowerShell) / macOS / Linux
 python scripts/setup_all.py --reset
 ```
 
@@ -188,8 +226,6 @@ Se preferir executar cada passo separadamente, os scripts individuais continuam 
 - `scripts/setup_all.py` — orquestracao unificada
 - `scripts/upload_raw_data.py` — upload dos CSVs
 - `scripts/create_databricks_workflow.py` — criação do workflow
-
-> **O Bicep (`infrastructure/main.bicep` e `resources.bicep`) ainda existe como alternativa**, mas nao cria automaticamente o metastore do Unity Catalog. Use o Terraform para provisionamento end-to-end.
 
 O workflow executa em sequência:
 1. **00_bronze_orchestrator** — para cada subpasta de fonte em `raw/`, inicia um stream do Auto Loader (`cloudFiles`) e aplica MERGE idempotente na Bronze. Gera `run_id`/`batch_id`. Loga métricas em `monitoring.data_quality_log`.
@@ -277,9 +313,16 @@ O setup usa `no_wait=true`: não bloqueia esperando o compute iniciar e imprime 
 
 As sete tabelas de `marathon.gold` consumidas pelo dashboard principal são: `kpi_summary`, `finishers_by_year`, `top_countries`, `age_gender_profile`, `weather_impact`, `times_distribution` e `marathon_comparison`.
 
-> **Re-deploy manual do dashboard:** se precisar reaplicar a definição JSON sem rodar o setup completo:
-> ```powershell
+> **Screenshots:** captures de cada página/view dos dashboards devem ficar em `docs/screenshots/` (ver `docs/screenshots/README.md` para nomes sugeridos).
+
+> **Re-deploy manual dos dashboards:** se precisar reaplicar a definição JSON sem rodar o setup completo:
+> ```bash
+> # Windows (PowerShell)
 > $env:DATABRICKS_TOKEN = (az account get-access-token --resource "2ff814a6-3304-4ab8-85cb-cd0e6f879c1d" --query accessToken -o tsv)
+> python scripts/_update_dashboard_api.py --catalog marathon
+>
+> # macOS/Linux
+> export DATABRICKS_TOKEN=$(az account get-access-token --resource "2ff814a6-3304-4ab8-85cb-cd0e6f879c1d" --query accessToken -o tsv)
 > python scripts/_update_dashboard_api.py --catalog marathon
 > ```
 
@@ -287,9 +330,16 @@ As sete tabelas de `marathon.gold` consumidas pelo dashboard principal são: `kp
 
 O consumidor externo em `dashboard/app.py` continua disponível. O setup preenche `DATABRICKS_HTTP_PATH` automaticamente com o warehouse provisionado.
 
-```powershell
+```bash
+# Windows (PowerShell)
 python -m venv .venv
 .venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+streamlit run dashboard/app.py
+
+# macOS/Linux
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 streamlit run dashboard/app.py
 ```
@@ -310,7 +360,8 @@ O bootstrap cria recursos persistentes que não fazem parte do ambiente descart�
 
 Execute o bootstrap apenas com o ambiente descartável removido, pois ele passa a ser o proprietário do Resource Group alvo:
 
-```powershell
+```bash
+# Windows (PowerShell) / macOS / Linux
 az login
 python scripts/bootstrap_ci.py
 ```
@@ -334,7 +385,8 @@ O workflow possui somente `contents: read` e `id-token: write`; as ações exter
 
 #### 14.3 Criar uma release
 
-```powershell
+```bash
+# Windows (PowerShell) / macOS / Linux
 git tag v1.0.0
 git push origin v1.0.0
 ```
@@ -366,9 +418,6 @@ marathon-case-data-master/
 │   │   ├── databricks/       # SQL Warehouse e AI/BI Dashboard
 │   │   ├── bootstrap/        # identidade OIDC, backend e Storage Seed
 │   │   └── ci/               # roots Terraform com backend remoto
-│   ├── main.bicep           # alternativa Azure-only
-│   ├── resources.bicep
-│   └── parameters.json
 ├── dashboard/
 │   ├── app.py                       # consumidor Streamlit opcional
 │   └── databricks/
@@ -386,7 +435,6 @@ marathon-case-data-master/
 │   ├── run_databricks_workflow.py
 │   ├── setup_all.py              # setup unificado (recomendado)
 │   ├── setup_unity_catalog.py    # cria/escolhe metastore e configura UC
-│   ├── setup.ps1                 # deploy do Bicep (alternativa)
 │   ├── setup_databricks_secrets.py
 │   ├── upload_raw_data.py
 │   ├── create_databricks_workflow.py
@@ -417,7 +465,7 @@ marathon-case-data-master/
 - **Autenticação sem PAT:** APIs e SQL Connector usam tokens temporários Microsoft Entra ID obtidos por `DefaultAzureCredential`; nenhum PAT é solicitado ou persistido.
 - **Arquivo `.env`:** centraliza somente configurações não secretas, como host, email de alerta, HTTP Path e caminho opcional no workspace.
 - **Versao Python do enable_file_events:** nao depende mais exclusivamente do PowerShell.
-- **Bicep mantido como alternativa:** arquivos `infrastructure/main.bicep` e `resources.bicep` continuam disponiveis, mas nao automatizam o metastore.
+- **Bicep removido:** todo o provisionamento usa Terraform (pastas `infrastructure/terraform/`); arquivos Bicep foram descontinuados.
 
 ### [2025] — Correções e melhorias no dashboard AI/BI
 

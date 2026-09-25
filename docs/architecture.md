@@ -58,7 +58,64 @@ Gera agregações e métricas para o dashboard. Tabelas **externas** armazenadas
 
 - `monitoring.data_quality_log`: tabela em modo **append** com uma linha por step/notebook/run. Campos: `run_id`, `batch_id`, `layer`, `step`, `source`, `year`, `row_count_in`, `row_count_out`, `rejected_records`, `key_columns_null_pct_json`, `schema_drift_flag`, `execution_time_sec`, `status`, `details`, `recorded_at`.
 
+### Estrutura por Camada
+
+| Camada | Tabela/View | Tipo | Chave/Partição | Conteúdo |
+|---|---|---|---|---|
+| Raw | `raw/<fonte>/` | Arquivo | — | CSVs brutos por maratona |
+| Raw | `raw/weather_api/` | Arquivo | `{source}/{year}/{race_date}.json` | JSONs brutos da API Open-Meteo |
+| Bronze | `bronze.<source>` | Delta externa | `source + year + row_hash` | Resultados brutos com metadados de ingestão |
+| Bronze | `bronze.marathon_metadata` | Delta externa | `source + year` | Metadados das provas (data, cidade, coords) |
+| Bronze | `bronze.weather_raw` | Delta externa | `source + year` | Clima parseado dos JSONs |
+| Bronze | `bronze.file_metadata` | Delta externa | `file_name` | Auditoria de arquivos processados |
+| Silver | `silver.marathons` | Delta externa | `source + year` | Dados limpos, anonimizados, sem PII |
+| Silver | `silver.marathons_pii` | Delta externa | `source + year` | PII completa (nomes, IDs) |
+| Silver | `silver.marathons_pii_public` | View | — | `athlete_name`/`athlete_id` mascarados; filtro `year >= 2014` para não-admins |
+| Silver | `silver.marathons_pii_admin` | View | — | Acesso completo para grupo `admins` |
+| Silver | `silver.marathons_with_weather` | Delta externa | `source + year` | Resultados + clima do dia da prova |
+| Gold | `gold.kpi_summary` | Delta externa | `source + year` | KPIs principais por edição |
+| Gold | `gold.finishers_by_year` | Delta externa | `source + year` | Evolução de finishers |
+| Gold | `gold.top_countries` | Delta externa | `source + year` | Ranking de países por participação |
+| Gold | `gold.athletes_by_country` | Delta externa | — | Agregado histórico por país |
+| Gold | `gold.times_distribution` | Delta externa | `source + year` | Distribuição de tempos em faixas |
+| Gold | `gold.marathon_comparison` | Delta externa | `source + year` | Comparativo entre maratonas |
+| Gold | `gold.age_gender_profile` | Delta externa | `source + year` | Perfil demográfico |
+| Gold | `gold.weather_impact` | Delta externa | `source + year` | Correlação clima × performance |
+| Monitoring | `monitoring.data_quality_log` | Delta externa | `run_id, batch_id, step` | Métricas de qualidade por etapa |
+
 ## Fluxo de Execução
+
+```mermaid
+flowchart TB
+    subgraph Trigger
+        A[Arquivos CSV chegam em raw/<fonte>/]
+        B[File Arrival Trigger / Event Grid]
+        C[Databricks Workflow]
+    end
+
+    A --> B --> C
+
+    subgraph Workflow
+        T1[00_bronze_orchestrator<br/>Auto Loader → Bronze]
+        T2[02_silver_etl<br/>Limpeza + mascaramento → Silver]
+        T3[04_weather_enrichment<br/>Open-Meteo → weather]
+        T4[03_gold_aggregations<br/>Agregações → Gold]
+        T5[05_governance_security<br/>Views mascaradas]
+    end
+
+    C --> T1 --> T2 --> T3 --> T4 --> T5
+
+    T1 -.->|log| M[(monitoring.data_quality_log)]
+    T2 -.->|log| M
+    T3 -.->|log| M
+    T4 -.->|log| M
+
+    T4 --> D[Dashboard AI/BI principal]
+    T5 --> D2[Dashboard Observabilidade]
+    M --> D2
+```
+
+1. Arquivos CSV são enviados para `raw/<fonte>/` via `scripts/upload_raw_data.py` (classifica por nome e cria o container se não existir).
 
 1. Arquivos CSV são enviados para `raw/<fonte>/` via `scripts/upload_raw_data.py` (classifica por nome e cria o container se não existir).
 2. O **File Arrival Trigger** detecta a chegada em qualquer subpasta de `raw/` e dispara o Databricks Workflow.
