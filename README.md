@@ -46,34 +46,6 @@ Todas as camadas são catalogadas no **Unity Catalog** (`marathon.bronze.*`, `ma
 
 ### Fluxo de Dados
 
-```mermaid
-flowchart TB
-    A[CSV local] --> B[ADLS raw/fonte]
-    B --> C[File Arrival Trigger]
-    C --> T1
-
-    subgraph WF["Databricks Workflow (ordem de execução)"]
-        direction TB
-        T1[00_bronze_orchestrator<br/>Auto Loader → Bronze]
-        T2[02_silver_etl<br/>Limpeza + anonimização → Silver]
-        T3[04_weather_enrichment<br/>Enriquecimento climático]
-        T4[03_gold_aggregations<br/>Agregações → Gold]
-        T5[05_governance_security<br/>Views mascaradas]
-        T1 --> T2 --> T3 --> T4 --> T5
-    end
-
-    API[Open-Meteo API] --> T3
-    T3 --> W1[raw/weather_api/]
-    T3 --> W2[bronze.weather_raw]
-    T3 --> W3[silver.marathons_with_weather]
-
-    T4 --> DASH[Dashboard AI/BI]
-    T5 --> DASH
-    M[monitoring.data_quality_log] --> DASH2[Dashboard Observabilidade]
-
-    WF -.->|métricas| M
-```
-
 ![Fluxo dos dados — Marathon Case](docs/fluxo_dos_dados.png)
 
 > **Documentação visual detalhada:** para um diagrama interativo com ícones e explicações passo a passo, abra `docs/fluxo.html` no navegador ou leia `docs/architecture.md`.
