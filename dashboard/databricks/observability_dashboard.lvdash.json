@@ -4,14 +4,14 @@
       "name": "pipeline_runs",
       "displayName": "Execuções do pipeline",
       "queryLines": [
-        "SELECT run_id, batch_id, MAX(recorded_at) AS recorded_at, SUM(execution_time_sec) AS total_execution_time_sec, MAX(CASE WHEN status IN ('FAIL', 'ERROR') THEN 1 ELSE 0 END) AS has_failure FROM monitoring.data_quality_log GROUP BY run_id, batch_id ORDER BY recorded_at DESC"
+        "SELECT run_id, batch_id, MAX(recorded_at) AS recorded_at, SUM(execution_time_sec) AS total_execution_time_sec, MAX(CASE WHEN status IN ('FAIL', 'ERROR') THEN 1 ELSE 0 END) AS has_failure FROM data_quality_log GROUP BY run_id, batch_id ORDER BY recorded_at DESC"
       ]
     },
     {
       "name": "quality_metrics",
       "displayName": "Métricas de qualidade",
       "queryLines": [
-        "SELECT layer, step, source, year, row_count_in, row_count_out, rejected_records, schema_drift_flag, execution_time_sec, status, recorded_at FROM monitoring.data_quality_log ORDER BY recorded_at DESC"
+        "SELECT layer, step, source, year, row_count_in, row_count_out, rejected_records, schema_drift_flag, execution_time_sec, status, recorded_at FROM data_quality_log ORDER BY recorded_at DESC"
       ]
     }
   ],
