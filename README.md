@@ -1,5 +1,11 @@
 # Case Engenharia de Dados — World Marathon Majors
 
+![Azure](https://img.shields.io/badge/Azure-0078D4?style=flat-square&logo=microsoft-azure&logoColor=white)
+![Databricks](https://img.shields.io/badge/Databricks-FF3621?style=flat-square&logo=databricks&logoColor=white)
+![Terraform](https://img.shields.io/badge/Terraform-7B42BC?style=flat-square&logo=terraform&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white)
+![Delta Lake](https://img.shields.io/badge/Delta_Lake-00ADD8?style=flat-square&logo=delta&logoColor=white)
+
 ## I. Objetivo do Case
 
 Desenvolver uma solução completa de Engenharia de Dados para ingerir, processar, armazenar e visualizar dados de resultados de maratonas. A solução demonstra extração, ingestão batch, arquitetura medalhão (Bronze/Silver/Gold), observabilidade, segurança, mascaramento de dados sensíveis, escalabilidade, governança via Unity Catalog e reprodutibilidade.
@@ -39,26 +45,34 @@ A solução implementa um pipeline end-to-end que, na prática, é o equivalente
 Todas as camadas são catalogadas no **Unity Catalog** (`marathon.bronze.*`, `marathon.silver.*`, `marathon.gold.*`), mas com os arquivos Delta armazenados em locais controlados pelo ADLS.
 
 ### Fluxo de Dados
-```
-CSV local ──► ADLS raw/<fonte>/ ──► File Arrival Trigger ──► 00_bronze_orchestrator (Auto Loader, gera run_id/batch_id)
-                                                              │
-                                              ┌───────────────┘
-                                              ▼
-                                    01_bronze_ingestion ──► Bronze (Delta) + monitoring.data_quality_log
-                                              │
-                                              ▼
-                                    02_silver_etl ──► silver.marathons + monitoring.data_quality_log
-                                              │
-                                              ▼
-                                    04_weather_enrichment ──► Open-Meteo API ──► raw/weather_api/ (JSON bruto)
-                                              │                               ──► bronze.weather_raw
-                                              │                               ──► silver.marathons_with_weather
-                                              │
-                                              ▼
-                                    03_gold_aggregations ──► gold.* + monitoring.data_quality_log
-                                              │
-                                              ▼
-                                         Dashboards (AI/BI)
+
+```mermaid
+flowchart TB
+    A[CSV local] --> B[ADLS raw/<fonte>/]
+    B --> C[File Arrival Trigger]
+    C --> D[00_bronze_orchestrator<br/>Auto Loader]
+
+    D --> E[Bronze Delta]
+    E --> F[02_silver_etl]
+    F --> G[Silver Delta]
+
+    H[Open-Meteo API] --> I[04_weather_enrichment]
+    I --> J[raw/weather_api/]
+    I --> K[bronze.weather_raw]
+    I --> L[silver.marathons_with_weather]
+
+    G --> M[03_gold_aggregations]
+    L --> M
+    M --> N[Gold Delta]
+
+    N --> O[Dashboard AI/BI]
+    N --> P[Dashboard Observabilidade]
+
+    D -.-> Q[monitoring.data_quality_log]
+    F -.-> Q
+    I -.-> Q
+    M -.-> Q
+    Q --> P
 ```
 
 > **Documentação visual detalhada:** para um diagrama completo com ícones e explicações passo a passo, abra `docs/architecture.html` no navegador ou leia `docs/architecture.md`.
@@ -393,6 +407,22 @@ git push origin v1.0.0
 
 O workflow `.github/workflows/release-deploy.yml` autentica por OIDC, baixa o Seed privado, aplica os states remotos de Azure e Databricks, executa o setup sem interação e aguarda o workflow Bronze/Silver/Gold finalizar. O workflow `.github/workflows/validate.yml` não recebe identidade Azure.
 
+### 15. Destruir o ambiente
+
+Para evitar custos após a avaliação, destrua todos os recursos provisionados.
+
+**Ambiente local (`rg-marathon-case`):**
+```bash
+# Windows (PowerShell) / macOS / Linux
+python scripts/destroy_all.py --environment local
+```
+
+**Ambiente de produção/CI (`rg-marathon-prod`):**
+- Dispare o workflow manual `.github/workflows/destroy-production.yml` no GitHub Actions, ou
+- Execute `python scripts/destroy_all.py --environment production`
+
+> O bootstrap (`rg-marathon-bootstrap`, identidade OIDC e backend Terraform) é preservado para permitir futuras implantações. Se quiser removê-lo também, execute `terraform destroy` em `infrastructure/terraform/bootstrap`.
+
 ## V. Estrutura do Repositório
 
 ```text
@@ -404,24 +434,26 @@ marathon-case-data-master/
 ├── config/
 │   └── config.yaml
 ├── data/
-│   └── raw/                # CSVs brutos (não versionados)
+│   └── raw/                # CSVs brutos (não versionados — arquivos >100 MB)
 ├── docs/
-│   └── architecture.md
+│   ├── architecture.md
+│   ├── architecture.html   # versão visual
+│   └── screenshots/        # captures das páginas dos dashboards
 ├── infrastructure/
-│   ├── terraform/           # provisionamento end-to-end (recomendado)
-│   │   ├── main.tf
-│   │   ├── metastore.tf
-│   │   ├── providers.tf
-│   │   ├── variables.tf
-│   │   ├── outputs.tf
-│   │   ├── terraform.tfvars.example
-│   │   ├── databricks/       # SQL Warehouse e AI/BI Dashboard
-│   │   ├── bootstrap/        # identidade OIDC, backend e Storage Seed
-│   │   └── ci/               # roots Terraform com backend remoto
+│   └── terraform/           # provisionamento end-to-end
+│       ├── main.tf
+│       ├── metastore.tf
+│       ├── providers.tf
+│       ├── variables.tf
+│       ├── outputs.tf
+│       ├── terraform.tfvars.example
+│       ├── databricks/       # SQL Warehouse e AI/BI Dashboards
+│       ├── bootstrap/        # identidade OIDC, backend e Storage Seed
+│       └── ci/               # roots Terraform com backend remoto
 ├── dashboard/
-│   ├── app.py                       # consumidor Streamlit opcional
 │   └── databricks/
-│       └── marathon_dashboard.lvdash.json
+│       ├── marathon_dashboard.lvdash.json
+│       └── observability_dashboard.lvdash.json
 ├── notebooks/
 │   ├── 00_bronze_orchestrator.py
 │   ├── 01_bronze_ingestion.py
