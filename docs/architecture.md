@@ -4,6 +4,10 @@
 
 Solução de Engenharia de Dados na Azure para processar e visualizar dados das maratonas de Chicago, Londres, Nova York e Berlim. A arquitetura usa ADLS Gen2 como data lake, Databricks com PySpark/Delta Lake e Unity Catalog para governança.
 
+![Fluxo de dados — Marathon Case](fluxo_dos_dados.png)
+
+> Versão interativa com ícones: abra `docs/fluxo.html` no navegador.
+
 ## Camadas
 
 ### Raw

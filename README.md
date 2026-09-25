@@ -74,7 +74,9 @@ flowchart TB
     WF -.->|métricas| M
 ```
 
-> **Documentação visual detalhada:** para um diagrama completo com ícones e explicações passo a passo, abra `docs/architecture.html` no navegador ou leia `docs/architecture.md`.
+![Fluxo dos dados — Marathon Case](docs/fluxo_dos_dados.png)
+
+> **Documentação visual detalhada:** para um diagrama interativo com ícones e explicações passo a passo, abra `docs/fluxo.html` no navegador ou leia `docs/architecture.md`.
 
 ## III. Fontes de Dados
 
