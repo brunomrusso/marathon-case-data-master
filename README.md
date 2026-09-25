@@ -86,6 +86,44 @@ Todas as camadas são catalogadas no **Unity Catalog** (`marathon.bronze.*`, `ma
 
 > **Documentação visual detalhada:** para um diagrama interativo com ícones e explicações passo a passo, abra `docs/fluxo.html` no navegador ou leia `docs/architecture.md`.
 
+### Recursos provisionados pelo Terraform
+
+Os nomes abaixo são os padrões usados pelo `setup_all.py` (local) e pela esteira `release-deploy.yml` (CI). Podem ser alterados via variáveis do Terraform.
+
+**Ambiente local (`setup_all.py`):**
+
+| Recurso | Nome padrão | Finalidade |
+|---|---|---|
+| Resource Group | `rg-marathon-case` | Agrupa todos os recursos do ambiente local |
+| Storage Account | `stmarathoncase` | ADLS Gen2 — landing zone e tabelas Delta |
+| Container | `marathon-data` | Camadas `raw/`, `bronze/`, `silver/`, `gold/`, `monitoring/` |
+| Databricks Workspace | `dbw-marathon-case` | Workspace Premium com Unity Catalog |
+| Managed Resource Group | `databricks-rg-marathon-case` | Recursos gerenciados pelo Databricks |
+| Access Connector | `ac-marathon-case-v2` | Conexão entre Unity Catalog e ADLS |
+| SQL Warehouse | `marathon-dashboard-warehouse` | 2X-Small serverless, auto-stop de 1 minuto |
+| Workflow | `marathon-case-bronze-silver-gold` | Orquestração das tarefas 00 → 02 → 04 → 03 → 05 |
+| Job cluster | `marathon_cluster` | Single-node `Standard_DS3_v2` para execução do workflow |
+| Unity Catalog | `marathon` | Catálogo padrão do ambiente local |
+
+**Ambiente de CI/CD (`tag v*`):**
+
+| Recurso | Nome padrão | Finalidade |
+|---|---|---|
+| Resource Group | `rg-marathon-prod` | Ambiente descartável de produção |
+| Storage Account | `stmarathonprod` | ADLS Gen2 do ambiente produtivo |
+| Databricks Workspace | `dbw-marathon-prod` | Workspace de produção |
+| Access Connector | `ac-marathon-prod-v2` | Conexão UC ↔ ADLS |
+| Unity Catalog | `marathon_prod` | Catálogo isolado do ambiente CI |
+
+**Bootstrap (só para CI/CD):**
+
+| Recurso | Nome padrão | Finalidade |
+|---|---|---|
+| Resource Group | `rg-marathon-bootstrap` | Identidade OIDC, backend Terraform e Storage Seed |
+| User Assigned Identity | `id-marathon-github` | Identidade usada pelo GitHub Actions |
+| Storage backend | `stmarathontf<suffix>` | Estado remoto do Terraform |
+| Storage Seed | `stmarathonseed<suffix>` | Cópia privada dos CSVs brutos para deploy CI |
+
 ## III. Fontes de Dados
 
 As origens usadas neste case são públicas e disponíveis para download nos links abaixo.
