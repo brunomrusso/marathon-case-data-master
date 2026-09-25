@@ -90,6 +90,8 @@ Atenção: os nomes dos atletas são campos sensíveis. Na camada Silver eles s�
 
 ## IV. Guia de Instalação e Execução
 
+> **Resumo para avaliação (TL;DR):** instale Python, Azure CLI e Terraform → `az login` → baixe os CSVs → `python scripts/setup_all.py` → rode o job no Databricks. A seção 14 (CI/CD) **não** é necessária para o setup local.
+
 ### 1. Pré-requisitos
 
 Antes de começar, instale as ferramentas abaixo:
@@ -359,6 +361,12 @@ streamlit run dashboard/app.py
 ```
 
 ### 14. CI/CD federado com GitHub Actions
+
+> ⚠️ **Esta seção é opcional e só é necessária para CI/CD (deploy via GitHub Actions).**
+>
+> **Para o setup local (avaliação do case), pule esta seção.** O `setup_all.py` provisiona todo o ambiente local (`rg-marathon-case`, workspace, Unity Catalog, notebooks, workflow e dashboards) sem nenhum bootstrap.
+>
+> O bootstrap descrito abaixo serve apenas para quem quer reproduzir a esteira de deploy automatizado: ele cria a identidade OIDC do GitHub, o backend remoto dos states Terraform e o Storage Seed privado com os CSVs — recursos persistentes que ficam em `rg-marathon-bootstrap` e não são destruídos junto com o ambiente descartável.
 
 A esteira usa GitHub OIDC e uma User Assigned Managed Identity. Não existem client secrets, PATs ou chaves de Storage no GitHub. Pull requests e pushes na `main` executam somente validações locais; tags `v*` acionam o provisionamento completo no environment protegido `production`. Para isolar ownership no metastore compartilhado, o setup local usa o catálogo `marathon` e a esteira usa `marathon_prod`, sem alterar o nome visual do dashboard.
 
