@@ -46,7 +46,7 @@ Todas as camadas são catalogadas no **Unity Catalog** (`marathon.bronze.*`, `ma
 
 ### Fluxo de Dados
 
-![Fluxo dos dados — Marathon Case](docs/fluxo_dos_dados.png?v=2)
+![Fluxo dos dados — Marathon Case](docs/fluxo_dados.png)
 
 > **Documentação visual detalhada:** para um diagrama interativo com ícones e explicações passo a passo, abra `docs/fluxo.html` no navegador ou leia `docs/architecture.md`.
 
