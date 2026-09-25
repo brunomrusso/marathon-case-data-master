@@ -376,7 +376,19 @@ O setup usa `no_wait=true`: não bloqueia esperando o compute iniciar e imprime 
 
 As sete tabelas de `marathon.gold` consumidas pelo dashboard principal são: `kpi_summary`, `finishers_by_year`, `top_countries`, `age_gender_profile`, `weather_impact`, `times_distribution` e `marathon_comparison`.
 
-> **Screenshots:** captures de cada página/view dos dashboards devem ficar em `docs/screenshots/` (ver `docs/screenshots/README.md` para nomes sugeridos).
+#### 13.2 Screenshots dos Dashboards
+
+Os prints das páginas do dashboard principal estão em `docs/screenshots/`.
+
+| Página | Preview |
+|---|---|
+| Visão Geral | ![Visão Geral](docs/screenshots/principal-overview.png) |
+| Países — performance | ![Performance](docs/screenshots/principal-performance.png) |
+| Distribuição de tempos | ![Tempos](docs/screenshots/principal-times.png) |
+| Demografia | ![Demografia](docs/screenshots/principal-demografia.jpg) |
+| Comparação entre maratonas | ![Comparação](docs/screenshots/principal-comparacao.png) |
+| Clima e performance | *(faltando — será adicionado no próximo deploy)* |
+| Dashboard de observabilidade | *(faltando — será adicionado no próximo deploy)* |
 
 > **Re-deploy manual dos dashboards:** se precisar reaplicar a definição JSON sem rodar o setup completo:
 > ```bash
