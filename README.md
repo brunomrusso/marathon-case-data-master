@@ -9,12 +9,12 @@
 ## Sumário
 
 - [I. Objetivo do Case](#i-objetivo-do-case)
-  - [I.1 Descritivo em Linguagem de Negócio](#i1-descritivo-em-linguagem-de-negocio)
+  - [I.1 Descritivo em Linguagem de Negócio](#i1-descritivo-em-linguagem-de-negócio)
 - [II. Arquitetura](#ii-arquitetura)
 - [III. Fontes de Dados](#iii-fontes-de-dados)
-- [IV. Guia de Instalação e Execução](#iv-guia-de-instalacao-e-execucao)
-- [V. Estrutura do Repositório](#v-estrutura-do-repositorio)
-- [VI. Melhorias e Considerações Finais](#vi-melhorias-e-consideracoes-finais)
+- [IV. Guia de Instalação e Execução](#iv-guia-de-instalação-e-execução)
+- [V. Estrutura do Repositório](#v-estrutura-do-repositório)
+- [VI. Melhorias e Considerações Finais](#vi-melhorias-e-considerações-finais)
 - [VII. Changelog](#vii-changelog)
 
 ## I. Objetivo do Case
