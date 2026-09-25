@@ -6,6 +6,17 @@
 ![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white)
 ![Delta Lake](https://img.shields.io/badge/Delta_Lake-00ADD8?style=flat-square&logo=delta&logoColor=white)
 
+## Sumário
+
+- [I. Objetivo do Case](#i-objetivo-do-case)
+  - [I.1 Descritivo em Linguagem de Negócio](#i1-descritivo-em-linguagem-de-negocio)
+- [II. Arquitetura](#ii-arquitetura)
+- [III. Fontes de Dados](#iii-fontes-de-dados)
+- [IV. Guia de Instalação e Execução](#iv-guia-de-instalacao-e-execucao)
+- [V. Estrutura do Repositório](#v-estrutura-do-repositorio)
+- [VI. Melhorias e Considerações Finais](#vi-melhorias-e-consideracoes-finais)
+- [VII. Changelog](#vii-changelog)
+
 ## I. Objetivo do Case
 
 Desenvolver uma solução completa de Engenharia de Dados para ingerir, processar, armazenar e visualizar dados de resultados de maratonas. A solução demonstra extração, ingestão batch, arquitetura medalhão (Bronze/Silver/Gold), observabilidade, segurança, mascaramento de dados sensíveis, escalabilidade, governança via Unity Catalog e reprodutibilidade.
@@ -33,7 +44,7 @@ A solução implementa um pipeline end-to-end que, na prática, é o equivalente
 - **Governança:** Unity Catalog, External Locations, Managed Identities, **column masks** e **row filters** nativos
 - **Observabilidade:** Databricks Job Metrics + tabela `monitoring.data_quality_log` + **dashboard de Observabilidade** separado no AI/BI
 - **Segurança:** OIDC, RBAC, criptografia, mascaramento e Access Connector
-- **Dashboard:** Databricks AI/BI provisionado por Terraform; Streamlit opcional para consumo externo
+- **Dashboard:** Databricks AI/BI provisionado por Terraform
 
 ### Arquitetura Medalhão
 - **Raw:** landing zone para CSV de resultados e JSONs brutos da API Open-Meteo (`raw/weather_api/`). Nenhum dado é processado nesta camada.
@@ -43,6 +54,31 @@ A solução implementa um pipeline end-to-end que, na prática, é o equivalente
 - **Monitoring:** tabela `monitoring.data_quality_log` com métricas de qualidade por camada, rastreabilidade end-to-end via `run_id`/`batch_id`, schema drift e tempo de execução.
 
 Todas as camadas são catalogadas no **Unity Catalog** (`marathon.bronze.*`, `marathon.silver.*`, `marathon.gold.*`), mas com os arquivos Delta armazenados em locais controlados pelo ADLS.
+
+### Estrutura por Camada
+
+| Camada | Tabela/View | Tipo | Chave/Partição | Conteúdo |
+|---|---|---|---|---|
+| Raw | `raw/<fonte>/` | Arquivo | — | CSVs brutos por maratona |
+| Raw | `raw/weather_api/` | Arquivo | `{source}/{year}/{race_date}.json` | JSONs brutos da API Open-Meteo |
+| Bronze | `bronze.<source>` | Delta externa | `source + year + row_hash` | Resultados brutos com metadados de ingestão |
+| Bronze | `bronze.marathon_metadata` | Delta externa | `source + year` | Metadados das provas (data, cidade, coords) |
+| Bronze | `bronze.weather_raw` | Delta externa | `source + year` | Clima parseado dos JSONs |
+| Bronze | `bronze.file_metadata` | Delta externa | `file_name` | Auditoria de arquivos processados |
+| Silver | `silver.marathons` | Delta externa | `source + year` | Dados limpos, anonimizados, sem PII |
+| Silver | `silver.marathons_pii` | Delta externa | `source + year` | PII completa (nomes, IDs) |
+| Silver | `silver.marathons_pii_public` | View | — | `athlete_name`/`athlete_id` mascarados; filtro `year >= 2014` para não-admins |
+| Silver | `silver.marathons_pii_admin` | View | — | Acesso completo para grupo `admins` |
+| Silver | `silver.marathons_with_weather` | Delta externa | `source + year` | Resultados + clima do dia da prova |
+| Gold | `gold.kpi_summary` | Delta externa | `source + year` | KPIs principais por edição |
+| Gold | `gold.finishers_by_year` | Delta externa | `source + year` | Evolução de finishers |
+| Gold | `gold.top_countries` | Delta externa | `source + year` | Ranking de países por participação |
+| Gold | `gold.athletes_by_country` | Delta externa | — | Agregado histórico por país |
+| Gold | `gold.times_distribution` | Delta externa | `source + year` | Distribuição de tempos em faixas |
+| Gold | `gold.marathon_comparison` | Delta externa | `source + year` | Comparativo entre maratonas |
+| Gold | `gold.age_gender_profile` | Delta externa | `source + year` | Perfil demográfico |
+| Gold | `gold.weather_impact` | Delta externa | `source + year` | Correlação clima × performance |
+| Monitoring | `monitoring.data_quality_log` | Delta externa | `run_id, batch_id, step` | Métricas de qualidade por etapa |
 
 ### Fluxo de Dados
 
@@ -314,24 +350,6 @@ As sete tabelas de `marathon.gold` consumidas pelo dashboard principal são: `kp
 > export DATABRICKS_TOKEN=$(az account get-access-token --resource "2ff814a6-3304-4ab8-85cb-cd0e6f879c1d" --query accessToken -o tsv)
 > python scripts/_update_dashboard_api.py --catalog marathon
 > ```
-
-#### 13.2 Streamlit opcional
-
-O consumidor externo em `dashboard/app.py` continua disponível. O setup preenche `DATABRICKS_HTTP_PATH` automaticamente com o warehouse provisionado.
-
-```bash
-# Windows (PowerShell)
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-streamlit run dashboard/app.py
-
-# macOS/Linux
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-streamlit run dashboard/app.py
-```
 
 ### 14. CI/CD federado com GitHub Actions
 
