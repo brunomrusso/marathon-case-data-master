@@ -41,16 +41,15 @@
             ],
             "spec": {
               "version": 2,
-              "widgetType": "kpi",
+              "widgetType": "counter",
               "encodings": {
                 "value": {
-                  "fieldName": "has_failure",
-                  "aggregation": "MAX"
+                  "fieldName": "has_failure"
                 }
               },
-              "options": {
+              "frame": {
                 "title": "Última execução falhou?",
-                "description": "0 = sucesso, 1 = falha"
+                "showTitle": true
               }
             }
           },
@@ -157,22 +156,28 @@
               }
             ],
             "spec": {
-              "version": 2,
+              "version": 3,
               "widgetType": "bar",
               "encodings": {
                 "x": {
                   "fieldName": "step",
                   "scale": {
                     "type": "categorical"
-                  }
+                  },
+                  "displayName": "Etapa"
                 },
                 "y": {
                   "fieldName": "execution_time_sec",
-                  "aggregation": "AVG"
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "aggregation": "AVG",
+                  "displayName": "Tempo médio (s)"
                 }
               },
-              "options": {
-                "title": "Tempo médio de execução por etapa"
+              "frame": {
+                "title": "Tempo médio de execução por etapa",
+                "showTitle": true
               }
             }
           },
@@ -203,15 +208,16 @@
             ],
             "spec": {
               "version": 2,
-              "widgetType": "kpi",
+              "widgetType": "counter",
               "encodings": {
                 "value": {
                   "fieldName": "schema_drift_flag",
                   "aggregation": "SUM"
                 }
               },
-              "options": {
-                "title": "Alertas de schema drift"
+              "frame": {
+                "title": "Alertas de schema drift",
+                "showTitle": true
               }
             }
           },
@@ -245,22 +251,28 @@
               }
             ],
             "spec": {
-              "version": 2,
+              "version": 3,
               "widgetType": "bar",
               "encodings": {
                 "x": {
                   "fieldName": "step",
                   "scale": {
                     "type": "categorical"
-                  }
+                  },
+                  "displayName": "Etapa"
                 },
                 "y": {
                   "fieldName": "rejected_records",
-                  "aggregation": "SUM"
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "aggregation": "SUM",
+                  "displayName": "Registros rejeitados"
                 }
               },
-              "options": {
-                "title": "Registros rejeitados por etapa"
+              "frame": {
+                "title": "Registros rejeitados por etapa",
+                "showTitle": true
               }
             }
           },
