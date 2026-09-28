@@ -55,6 +55,14 @@ A solução implementa um pipeline end-to-end que, na prática, é o equivalente
 
 Todas as camadas são catalogadas no **Unity Catalog** (`marathon.bronze.*`, `marathon.silver.*`, `marathon.gold.*`), mas com os arquivos Delta armazenados em locais controlados pelo ADLS.
 
+**Catálogo `marathon` no Unity Catalog** — schemas `bronze`, `silver`, `gold` e `monitoring` provisionados pelo setup:
+
+![Catálogo no Unity Catalog](docs/screenshots/catalogo_databricks.png)
+
+**Container `marathon-data` no ADLS Gen2** — as pastas `raw/`, `bronze/`, `silver/`, `gold/` e `monitoring/` refletem exatamente a arquitetura medalhão:
+
+![Camadas no ADLS Gen2](docs/screenshots/storage_adls.png)
+
 ### Estrutura por Camada
 
 | Camada | Tabela/View | Tipo | Chave/Partição | Conteúdo |
@@ -303,6 +311,10 @@ O workflow executa em sequência:
 > **Rastreamento end-to-end:** `run_id` e `batch_id` são gerados no `00_bronze_orchestrator` e propagados via `dbutils.jobs.taskValues` para Silver, Weather e Gold. A tabela `monitoring.data_quality_log` permite rastrear cada execução por camada, incluindo `row_count_in`, `row_count_out`, `rejected_records`, `% nulos`, `schema_drift_flag` e `execution_time_sec`.
 >
 > **Sobre as datas das provas:** O notebook `04_weather_enrichment` gera `bronze.marathon_metadata` estimando a data de cada prova com base em padrões históricos (ex: último domingo de setembro para Berlim). Se quiser datas exatas, crie um arquivo `data/raw/marathon_metadata.csv` com as colunas `source,year,marathon_name,city,country,latitude,longitude,race_date`; o `upload_raw_data.py` o enviará para `raw/metadata/marathon_metadata.csv`. O notebook faz MERGE/upsert nessa tabela e usa o CSV automaticamente quando ele existe. O exemplo está em `notebooks/marathon_metadata.csv.example`.
+
+**Execução bem-sucedida do workflow** — grafo das 5 tasks encadeadas com cluster `marathon_cluster`:
+
+![Workflow Databricks — run com sucesso](docs/screenshots/workflow_databricks.png)
 
 ### 12. Tabelas Gold — Finalidade
 
