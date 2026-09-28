@@ -216,21 +216,21 @@
                 }
               },
               "frame": {
-                "title": "Alertas de schema drift",
+                "title": "Schema drift",
                 "showTitle": true
               }
             }
           },
           "position": {
-            "x": 0,
+            "x": 10,
             "y": 14,
-            "width": 3,
-            "height": 8
+            "width": 2,
+            "height": 4
           }
         },
         {
           "widget": {
-            "name": "obs-rejected-records-chart",
+            "name": "obs-rejected-bronze",
             "queries": [
               {
                 "name": "main_query",
@@ -238,12 +238,8 @@
                   "datasetName": "quality_metrics",
                   "fields": [
                     {
-                      "name": "step",
-                      "expression": "step"
-                    },
-                    {
                       "name": "rejected_records",
-                      "expression": "rejected_records"
+                      "expression": "SUM(CASE WHEN `step` = 'bronze_orchestrator' THEN `rejected_records` ELSE 0 END)"
                     }
                   ],
                   "disaggregated": false
@@ -251,36 +247,180 @@
               }
             ],
             "spec": {
-              "version": 3,
-              "widgetType": "bar",
+              "version": 2,
+              "widgetType": "counter",
               "encodings": {
-                "x": {
-                  "fieldName": "step",
-                  "scale": {
-                    "type": "categorical"
-                  },
-                  "displayName": "Etapa"
-                },
-                "y": {
-                  "fieldName": "rejected_records",
-                  "scale": {
-                    "type": "quantitative"
-                  },
-                  "aggregation": "SUM",
-                  "displayName": "Registros rejeitados"
+                "value": {
+                  "fieldName": "rejected_records"
                 }
               },
               "frame": {
-                "title": "Registros rejeitados por etapa",
+                "title": "Rejeitados — Bronze",
                 "showTitle": true
               }
             }
           },
           "position": {
-            "x": 3,
+            "x": 0,
             "y": 14,
-            "width": 3,
-            "height": 8
+            "width": 2,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "obs-rejected-silver",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "quality_metrics",
+                  "fields": [
+                    {
+                      "name": "rejected_records",
+                      "expression": "SUM(CASE WHEN `step` = 'silver_etl' THEN `rejected_records` ELSE 0 END)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "rejected_records"
+                }
+              },
+              "frame": {
+                "title": "Rejeitados — Silver",
+                "showTitle": true
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 14,
+            "width": 2,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "obs-rejected-weather",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "quality_metrics",
+                  "fields": [
+                    {
+                      "name": "rejected_records",
+                      "expression": "SUM(CASE WHEN `step` = 'weather_enrichment' THEN `rejected_records` ELSE 0 END)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "rejected_records"
+                }
+              },
+              "frame": {
+                "title": "Rejeitados — Weather",
+                "showTitle": true
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 14,
+            "width": 2,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "obs-rejected-gold",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "quality_metrics",
+                  "fields": [
+                    {
+                      "name": "rejected_records",
+                      "expression": "SUM(CASE WHEN `step` = 'gold_aggregations' THEN `rejected_records` ELSE 0 END)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "rejected_records"
+                }
+              },
+              "frame": {
+                "title": "Rejeitados — Gold",
+                "showTitle": true
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 14,
+            "width": 2,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "obs-rejected-governance",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "quality_metrics",
+                  "fields": [
+                    {
+                      "name": "rejected_records",
+                      "expression": "SUM(CASE WHEN `step` = 'masked_pii_views' THEN `rejected_records` ELSE 0 END)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "rejected_records"
+                }
+              },
+              "frame": {
+                "title": "Rejeitados — Governança",
+                "showTitle": true
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 14,
+            "width": 2,
+            "height": 4
           }
         }
       ]
