@@ -13,6 +13,48 @@
       "queryLines": [
         "SELECT layer, step, source, year, row_count_in, row_count_out, rejected_records, schema_drift_flag, execution_time_sec, status, recorded_at FROM data_quality_log ORDER BY recorded_at DESC"
       ]
+    },
+    {
+      "name": "rejected_bronze",
+      "displayName": "Rejeitados — bronze_orchestrator",
+      "queryLines": [
+        "SELECT COALESCE(SUM(rejected_records), 0) AS rejected_records FROM data_quality_log WHERE step = 'bronze_orchestrator'"
+      ]
+    },
+    {
+      "name": "rejected_silver",
+      "displayName": "Rejeitados — silver_etl",
+      "queryLines": [
+        "SELECT COALESCE(SUM(rejected_records), 0) AS rejected_records FROM data_quality_log WHERE step = 'silver_etl'"
+      ]
+    },
+    {
+      "name": "rejected_weather",
+      "displayName": "Rejeitados — weather_enrichment",
+      "queryLines": [
+        "SELECT COALESCE(SUM(rejected_records), 0) AS rejected_records FROM data_quality_log WHERE step = 'weather_enrichment'"
+      ]
+    },
+    {
+      "name": "rejected_gold",
+      "displayName": "Rejeitados — gold_aggregations",
+      "queryLines": [
+        "SELECT COALESCE(SUM(rejected_records), 0) AS rejected_records FROM data_quality_log WHERE step = 'gold_aggregations'"
+      ]
+    },
+    {
+      "name": "rejected_governance",
+      "displayName": "Rejeitados — masked_pii_views",
+      "queryLines": [
+        "SELECT COALESCE(SUM(rejected_records), 0) AS rejected_records FROM data_quality_log WHERE step = 'masked_pii_views'"
+      ]
+    },
+    {
+      "name": "schema_drift_count",
+      "displayName": "Alertas de schema drift",
+      "queryLines": [
+        "SELECT COUNT_IF(schema_drift_flag) AS schema_drift_count FROM data_quality_log"
+      ]
     }
   ],
   "pages": [
@@ -195,11 +237,11 @@
               {
                 "name": "main_query",
                 "query": {
-                  "datasetName": "quality_metrics",
+                  "datasetName": "schema_drift_count",
                   "fields": [
                     {
-                      "name": "schema_drift_flag",
-                      "expression": "SUM(CASE WHEN `schema_drift_flag` THEN 1 ELSE 0 END)"
+                      "name": "schema_drift_count",
+                      "expression": "SUM(schema_drift_count)"
                     }
                   ],
                   "disaggregated": false
@@ -211,7 +253,7 @@
               "widgetType": "counter",
               "encodings": {
                 "value": {
-                  "fieldName": "schema_drift_flag",
+                  "fieldName": "schema_drift_count",
                   "aggregation": "SUM"
                 }
               },
@@ -235,11 +277,11 @@
               {
                 "name": "main_query",
                 "query": {
-                  "datasetName": "quality_metrics",
+                  "datasetName": "rejected_bronze",
                   "fields": [
                     {
                       "name": "rejected_records",
-                      "expression": "SUM(CASE WHEN `step` = 'bronze_orchestrator' THEN `rejected_records` ELSE 0 END)"
+                      "expression": "SUM(rejected_records)"
                     }
                   ],
                   "disaggregated": false
@@ -274,11 +316,11 @@
               {
                 "name": "main_query",
                 "query": {
-                  "datasetName": "quality_metrics",
+                  "datasetName": "rejected_silver",
                   "fields": [
                     {
                       "name": "rejected_records",
-                      "expression": "SUM(CASE WHEN `step` = 'silver_etl' THEN `rejected_records` ELSE 0 END)"
+                      "expression": "SUM(rejected_records)"
                     }
                   ],
                   "disaggregated": false
@@ -313,11 +355,11 @@
               {
                 "name": "main_query",
                 "query": {
-                  "datasetName": "quality_metrics",
+                  "datasetName": "rejected_weather",
                   "fields": [
                     {
                       "name": "rejected_records",
-                      "expression": "SUM(CASE WHEN `step` = 'weather_enrichment' THEN `rejected_records` ELSE 0 END)"
+                      "expression": "SUM(rejected_records)"
                     }
                   ],
                   "disaggregated": false
@@ -352,11 +394,11 @@
               {
                 "name": "main_query",
                 "query": {
-                  "datasetName": "quality_metrics",
+                  "datasetName": "rejected_gold",
                   "fields": [
                     {
                       "name": "rejected_records",
-                      "expression": "SUM(CASE WHEN `step` = 'gold_aggregations' THEN `rejected_records` ELSE 0 END)"
+                      "expression": "SUM(rejected_records)"
                     }
                   ],
                   "disaggregated": false
@@ -391,11 +433,11 @@
               {
                 "name": "main_query",
                 "query": {
-                  "datasetName": "quality_metrics",
+                  "datasetName": "rejected_governance",
                   "fields": [
                     {
                       "name": "rejected_records",
-                      "expression": "SUM(CASE WHEN `step` = 'masked_pii_views' THEN `rejected_records` ELSE 0 END)"
+                      "expression": "SUM(rejected_records)"
                     }
                   ],
                   "disaggregated": false
