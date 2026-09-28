@@ -19,11 +19,11 @@
 
 ## I. Objetivo do Case
 
-Desenvolver uma solução completa de Engenharia de Dados para ingerir, processar, armazenar e visualizar dados de resultados de maratonas. A solução demonstra extração, ingestão batch, arquitetura medalhão (Bronze/Silver/Gold), observabilidade, segurança, mascaramento de dados sensíveis, escalabilidade, governança via Unity Catalog e reprodutibilidade.
+Desenvolver uma solução completa de Engenharia de Dados para ingerir, processar, armazenar e visualizar dados de resultados de maratonas. O case cobre **4 das 6 provas das World Marathon Majors** (AbbottWMM — a série das principais maratonas do mundo): Berlim, Chicago, Londres e Nova York. A solução demonstra extração, ingestão batch, arquitetura medalhão (Bronze/Silver/Gold), observabilidade, segurança, mascaramento de dados sensíveis, escalabilidade, governança via Unity Catalog e reprodutibilidade.
 
 ## I.1 Descritivo em Linguagem de Negócio
 
-Este case simula o projeto de um analista de dados esportivos que precisa responder perguntas comuns de negócio:
+Este case simula o projeto de um analista de dados esportivos que precisa responder perguntas comuns de negócio sobre **4 das 6 provas das World Marathon Majors** — Berlim, Chicago, Londres e Nova York (Tóquio e Boston ficaram fora do escopo do case):
 
 - **Participação:** quantos atletas completam cada maratona, por edição e por país.
 - **Performance:** qual maratona tem os tempos mais rápidos/lentos e qual país tem melhor desempenho médio.
