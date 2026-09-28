@@ -171,7 +171,7 @@
           "position": {
             "x": 2,
             "y": 0,
-            "width": 4,
+            "width": 10,
             "height": 4
           }
         },
@@ -226,7 +226,7 @@
           "position": {
             "x": 0,
             "y": 4,
-            "width": 6,
+            "width": 12,
             "height": 10
           }
         },
