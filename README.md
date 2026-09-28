@@ -538,7 +538,7 @@ marathon-case-data-master/
 
 ## VII. Changelog
 
-### [2025] — Setup unificado e simplificacao
+### [2026] — Setup unificado e simplificacao
 
 - **Setup unificado:** novo `scripts/setup_all.py` executa todo o provisionamento e configuracao em um unico comando, com persistencia de estado para retomada.
 - **Infraestrutura como Terraform:** pasta `infrastructure/terraform/` cria Azure resources e Databricks workspace de forma automatizada.
@@ -548,7 +548,7 @@ marathon-case-data-master/
 - **Versao Python do enable_file_events:** nao depende mais exclusivamente do PowerShell.
 - **Bicep removido:** todo o provisionamento usa Terraform (pastas `infrastructure/terraform/`); arquivos Bicep foram descontinuados.
 
-### [2025] — Correções e melhorias no dashboard AI/BI
+### [2026] — Correções e melhorias no dashboard AI/BI
 
 - **Normalização de source no dashboard:** valores de origem padronizados para Title Case nos datasets (`berlin` → `Berlin`, `nyc` → `New York`) via `CASE` nas queries, eliminando duplicatas nos filtros.
 - **KPI tempo médio corrigido:** counter widget alterado de expressão `CONCAT` (string `HH:MM`) para `CAST(ROUND(AVG(avg_finish_time_min), 0) AS INT)`. Widgets contador do Databricks AI/BI não renderizam strings; o formato `format.precision` foi removido por ser inválido nesse tipo de widget.
@@ -557,7 +557,7 @@ marathon-case-data-master/
 - **Remoção do widget de qualidade:** tabela "Últimas verificações de qualidade" removida do dashboard (monitoramento continua ativo em `marathon.monitoring.data_quality_log`).
 - **Filtro de gênero sanitizado:** queries de demographics e times_metrics filtram apenas valores válidos (`F`, `M`, `X`, `NON-BINARY`, `NOT SPECIFIED`), excluindo ruído de dados brutos.
 
-### [2025] — Ajustes de execução e correções de pipeline
+### [2026] — Ajustes de execução e correções de pipeline
 
 - **Observabilidade append-only:** tabela `monitoring.data_quality_log` migrada de `overwrite` para `append` com `mergeSchema=true`, eliminando conflito de schema entre notebooks executados na mesma run.
 - **Ignorar arquivos não-fonte no orquestrador:** `00_bronze_orchestrator.py` agora ignora arquivos como `marathon_metadata.csv` que não são fontes de resultados de maratona, em vez de abortar com `ValueError`.
