@@ -9,8 +9,8 @@ Coloque aqui os prints de cada view/página dos dashboards AI/BI:
 - `principal-times.png` — Distribuição de tempos
 - `principal-demografia.jpg` — Demografia
 - `principal-comparacao.png` — Comparação entre maratonas
-- `principal-clima.png` — Clima e performance (quando disponível)
-- `observability-main.png` — Dashboard de observabilidade (quando disponível)
+- `principal-clima.png` — Clima e performance
+- `observability-main.png` — Dashboard de observabilidade
 
 Outras imagens da infraestrutura também podem ser incluídas aqui, por exemplo:
 

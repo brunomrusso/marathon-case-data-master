@@ -387,8 +387,8 @@ Os prints das páginas do dashboard principal estão em `docs/screenshots/`.
 | Distribuição de tempos | ![Tempos](docs/screenshots/principal-times.png) |
 | Demografia | ![Demografia](docs/screenshots/principal-demografia.jpg) |
 | Comparação entre maratonas | ![Comparação](docs/screenshots/principal-comparacao.png) |
-| Clima e performance | *(faltando — será adicionado no próximo deploy)* |
-| Dashboard de observabilidade | *(faltando — será adicionado no próximo deploy)* |
+| Clima e performance | ![Clima e performance](docs/screenshots/principal-clima.png) |
+| Dashboard de observabilidade | ![Observabilidade](docs/screenshots/observability-main.png) |
 
 > **Re-deploy manual dos dashboards:** se precisar reaplicar a definição JSON sem rodar o setup completo:
 > ```bash
