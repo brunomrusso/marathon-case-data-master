@@ -199,7 +199,7 @@
                   "fields": [
                     {
                       "name": "schema_drift_flag",
-                      "expression": "schema_drift_flag"
+                      "expression": "CAST(`schema_drift_flag` AS INT)"
                     }
                   ],
                   "disaggregated": false
